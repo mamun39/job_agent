@@ -1,0 +1,101 @@
+"""Deterministic deduplication helpers for job postings."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from job_agent.core.models import JobPosting
+
+
+TRACKING_QUERY_PREFIXES = ("utm_",)
+TRACKING_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "ref",
+    "ref_src",
+    "source",
+}
+
+
+def canonicalize_url(url: str) -> str:
+    """Normalize a job URL conservatively for dedupe comparisons."""
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower() or "https"
+    hostname = (parts.hostname or "").lower()
+    port = parts.port
+
+    netloc = hostname
+    if port is not None and not _is_default_port(scheme, port):
+        netloc = f"{hostname}:{port}"
+
+    path = parts.path or "/"
+    if path != "/":
+        path = path.rstrip("/")
+        if not path.startswith("/"):
+            path = f"/{path}"
+
+    query = _normalize_query(parts.query)
+    return urlunsplit((scheme, netloc, path, query, ""))
+
+
+def compute_dedupe_key(job: JobPosting) -> str:
+    """Compute a stable dedupe key with conservative precedence."""
+    if job.source_job_id:
+        return f"source:{job.source_site}:{job.source_job_id.casefold()}"
+    return f"url:{canonicalize_url(str(job.url))}"
+
+
+def build_comparison_inputs(job: JobPosting) -> tuple[str, str, str]:
+    """Build normalized fallback fields for exact deterministic comparison."""
+    return (
+        _normalize_free_text(job.title),
+        _normalize_free_text(job.company),
+        _normalize_free_text(job.location),
+    )
+
+
+def same_source_identity(left: JobPosting, right: JobPosting) -> bool:
+    """Return true when both postings expose the same source identity."""
+    return bool(
+        left.source_job_id
+        and right.source_job_id
+        and left.source_site == right.source_site
+        and left.source_job_id.casefold() == right.source_job_id.casefold()
+    )
+
+
+def same_canonical_url(left: JobPosting, right: JobPosting) -> bool:
+    """Return true when both postings share the same canonical URL."""
+    return canonicalize_url(str(left.url)) == canonicalize_url(str(right.url))
+
+
+def same_fallback_identity(left: JobPosting, right: JobPosting) -> bool:
+    """Return true for exact normalized fallback fields only."""
+    return build_comparison_inputs(left) == build_comparison_inputs(right)
+
+
+def _normalize_query(query: str) -> str:
+    items = parse_qsl(query, keep_blank_values=False)
+    filtered = [
+        (key, value)
+        for key, value in items
+        if not _is_tracking_query_key(key)
+    ]
+    filtered.sort(key=lambda item: (item[0], item[1]))
+    return urlencode(filtered, doseq=True)
+
+
+def _is_tracking_query_key(key: str) -> bool:
+    lowered = key.casefold()
+    return lowered.startswith(TRACKING_QUERY_PREFIXES) or lowered in TRACKING_QUERY_KEYS
+
+
+def _is_default_port(scheme: str, port: int) -> bool:
+    return (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+
+
+def _normalize_free_text(value: str) -> str:
+    return " ".join(value.casefold().split())

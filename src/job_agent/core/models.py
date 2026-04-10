@@ -116,6 +116,24 @@ class JobPosting(BaseModel):
             raise ValueError("posted_at cannot be later than discovered_at")
         return self
 
+    @property
+    def canonical_url(self) -> str:
+        from job_agent.core.dedupe import canonicalize_url
+
+        return canonicalize_url(str(self.url))
+
+    @property
+    def dedupe_key(self) -> str:
+        from job_agent.core.dedupe import compute_dedupe_key
+
+        return compute_dedupe_key(self)
+
+    @property
+    def comparison_inputs(self) -> tuple[str, str, str]:
+        from job_agent.core.dedupe import build_comparison_inputs
+
+        return build_comparison_inputs(self)
+
 
 class SearchQuery(BaseModel):
     """Search input definition for finding jobs."""

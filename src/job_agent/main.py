@@ -63,6 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
     open_target = open_parser.add_mutually_exclusive_group(required=True)
     open_target.add_argument("--id", type=int, help="Stored job database id.")
     open_target.add_argument("--url", help="Exact stored job URL.")
+
+    dashboard_parser = subparsers.add_parser(
+        "dashboard",
+        help="Run a minimal local review dashboard.",
+    )
+    dashboard_parser.add_argument("--host", default="127.0.0.1", help="Bind host. Defaults to localhost only.")
+    dashboard_parser.add_argument("--port", type=int, default=8000, help="Bind port.")
     return parser
 
 
@@ -152,6 +159,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(str(exc))
             return 1
         print(f"Opened {opened_url}")
+        return 0
+
+    if args.command == "dashboard":
+        import uvicorn
+        from job_agent.ui.dashboard import create_dashboard_app
+
+        app = create_dashboard_app(db_path=settings.db_path)
+        uvicorn.run(app, host=args.host, port=args.port)
         return 0
 
     return 0

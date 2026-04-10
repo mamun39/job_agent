@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>job-agent dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <main class="page">
+    <h1>Jobs</h1>
+    <form method="get" action="/jobs" class="filters">
+      <label>Source Site <input type="text" name="source_site" value="{{ filters.source_site }}"></label>
+      <label>Company <input type="text" name="company" value="{{ filters.company }}"></label>
+      <label>Location <input type="text" name="location_contains" value="{{ filters.location_contains }}"></label>
+      <label>Reviewed
+        <select name="reviewed">
+          <option value="all"{% if filters.reviewed == 'all' %} selected{% endif %}>All</option>
+          <option value="reviewed"{% if filters.reviewed == 'reviewed' %} selected{% endif %}>Reviewed</option>
+          <option value="unreviewed"{% if filters.reviewed == 'unreviewed' %} selected{% endif %}>Unreviewed</option>
+        </select>
+      </label>
+      <label>Decision <input type="text" name="decision" value="{{ filters.decision }}"></label>
+      <label>Min Score <input type="number" step="1" name="min_score" value="{{ filters.min_score }}"></label>
+      <label>Limit <input type="number" step="1" min="1" name="limit" value="{{ filters.limit }}"></label>
+      <button type="submit">Apply Filters</button>
+    </form>
+
+    {% if jobs %}
+      <table class="jobs-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Company</th>
+            <th>Location</th>
+            <th>Source</th>
+            <th>Score</th>
+            <th>Decision</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td><a href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
+            <td>{{ job.company }}</td>
+            <td>{{ job.location }}</td>
+            <td>{{ job.source_site }}</td>
+            <td>{{ job.score }}</td>
+            <td>{{ job.decision }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No jobs found.</p>
+    {% endif %}
+  </main>
+</body>
+</html>

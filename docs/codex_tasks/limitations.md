@@ -5,6 +5,7 @@ Last updated: 2026-04-10
 ## Current limitations
 
 - The CLI exposes discovery and review commands, but it remains a plain command-line interface without richer interactive workflows.
+- A minimal local dashboard now exists for review workflows, but it is intentionally server-rendered and limited to simple list/detail/review actions.
 - `.env` parsing is intentionally simple and only supports basic `KEY=VALUE` lines.
 - Logging is structured but minimal and does not yet include richer context fields or log sinks.
 - SQLite storage uses a single lightweight schema with no migration framework.
@@ -22,11 +23,14 @@ Last updated: 2026-04-10
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
 - Discovery query configuration can drive live listing-page discovery for supported adapters, but it is still limited to one fetched start URL per query.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
+- No login automation, site navigation flows, application submission logic, or resume tailoring logic exists.
 - The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but it does not yet support pagination, multi-step navigation, or browser-driven detail-page collection.
-- The review workflow is CLI-only and non-interactive; there is no dashboard or richer terminal UI.
+- The review workflow now supports both CLI and a minimal local dashboard, but there is still no richer terminal UI, authentication layer, or collaborative multi-user workflow.
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
 - The review decision persistence layer exists, but dedicated CLI parser commands for updating and viewing persisted decisions are not yet wired into the main command surface.
 - The CLI can open stored job URLs in the system browser for manual review, but it does not track browser-open events or review completion.
+- The local dashboard is intended for localhost use only and does not implement authentication, authorization, CSRF protection, or hardened deployment concerns.
+- The local dashboard uses simple server-rendered pages and basic form/query filters; it does not include pagination, sorting controls, live updates, or richer search ergonomics.
 - The optional summarizer layer is currently presentation-only: it provides a local rule-based fallback and an interface for future injected model-backed summarizers, but it is not yet wired into the main CLI command surface.
 - No remote LLM provider integration, prompt configuration, or model-specific runtime settings are implemented; any future model-backed summarizer must remain explicitly optional and read-only.
 

@@ -119,6 +119,14 @@ class JobsRepository:
         ).fetchone()
         return self._row_to_job(row) if row else None
 
+    def fetch_by_id(self, job_id: int) -> JobPosting | None:
+        """Fetch a single job posting by database id."""
+        row = self._connection.execute(
+            "SELECT * FROM jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        return self._row_to_job(row) if row else None
+
     def fetch_by_source_identity(self, source_site: str, source_job_id: str) -> JobPosting | None:
         """Fetch a single job posting by source-specific identity."""
         row = self._connection.execute(
@@ -246,6 +254,32 @@ class JobsRepository:
             }
         )
 
+    def get_review_decisions_by_url(self, posting_urls: Any) -> dict[str, ReviewDecision]:
+        """Fetch persisted review decisions for a set of posting URLs."""
+        urls = list(dict.fromkeys(str(url) for url in posting_urls))
+        if not urls:
+            return {}
+        placeholders = ", ".join("?" for _ in urls)
+        rows = self._connection.execute(
+            f"""
+            SELECT posting_url, decision, decided_at, note
+            FROM review_decisions
+            WHERE posting_url IN ({placeholders})
+            """,
+            urls,
+        ).fetchall()
+        return {
+            str(row["posting_url"]): ReviewDecision.model_validate(
+                {
+                    "posting_url": row["posting_url"],
+                    "decision": row["decision"],
+                    "decided_at": self._parse_datetime(row["decided_at"]),
+                    "note": row["note"],
+                }
+            )
+            for row in rows
+        }
+
     def _job_to_row(self, job: JobPosting) -> dict[str, Any]:
         return {
             "source_site": job.source_site,
@@ -264,6 +298,8 @@ class JobsRepository:
         }
 
     def _row_to_job(self, row: sqlite3.Row) -> JobPosting:
+        metadata = json.loads(row["metadata_json"])
+        metadata.setdefault("db_id", row["id"])
         return JobPosting.model_validate(
             {
                 "source_site": row["source_site"],
@@ -278,7 +314,7 @@ class JobsRepository:
                 "posted_at": self._parse_datetime(row["posted_at"]),
                 "discovered_at": self._parse_datetime(row["discovered_at"]),
                 "description_text": row["description_text"],
-                "metadata": json.loads(row["metadata_json"]),
+                "metadata": metadata,
             }
         )
 

@@ -10,6 +10,7 @@
 - Deduplicates by source identity, canonical URL, and exact fallback fields
 - Lists stored jobs, shows job details, exports CSV, and opens stored URLs in your default browser
 - Persists review decisions in storage
+- Runs a minimal local dashboard for browser-based job review
 - Provides an optional read-only summarizer interface for short job-match explanations, with a local fallback summarizer and no required external model service
 
 ## Current support
@@ -27,7 +28,7 @@ Still not implemented:
 - Pagination or multi-page crawling
 - Detail-page parsing
 - Application submission
-- Web dashboard
+- Authentication or hardened multi-user web dashboard
 - Remote LLM provider integration for summaries
 
 ## Quick start
@@ -106,6 +107,9 @@ job-agent review export --output ./exports/jobs.csv
 
 job-agent open --id 1
 job-agent open --url https://example.com/jobs/123
+
+job-agent dashboard
+job-agent dashboard --host 127.0.0.1 --port 8001
 ```
 
 ## Typical workflow
@@ -115,7 +119,8 @@ job-agent open --url https://example.com/jobs/123
 3. Run `job-agent review list` to inspect stored jobs.
 4. Run `job-agent review show --url ...` for full details.
 5. Run `job-agent open --id ...` to open a posting in your browser for manual review.
-6. Run `job-agent review export --output ...` to export filtered jobs to CSV.
+6. Run `job-agent dashboard` to review jobs in a minimal local browser UI.
+7. Run `job-agent review export --output ...` to export filtered jobs to CSV.
 
 ## Storage
 
@@ -140,6 +145,8 @@ These paths are created automatically when needed.
 - Indeed and LinkedIn adapters currently exist for saved fixture parsing, not for configured live discovery.
 - YAML query files require `PyYAML`; JSON works out of the box.
 - Review decision persistence exists in storage, but dedicated CLI commands for updating/viewing those decisions are not fully wired yet.
+- The dashboard is a simple local FastAPI app with server-rendered pages for list, detail, and review-decision updates.
+- The dashboard is intended for localhost use and does not implement authentication, CSRF protection, pagination, or richer multi-user web features.
 - The optional summarizer layer is presentation-only today: it returns short explanatory text from job data plus rule explanations and does not modify stored job records.
 - Model-backed summarizers are not implemented; the default behavior is a local fallback summarizer with no remote dependency.
 

@@ -1,0 +1,83 @@
+body {
+  font-family: "Segoe UI", sans-serif;
+  margin: 0;
+  background: #f5f5f0;
+  color: #1f1f1f;
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.filters,
+.decision-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 24px;
+}
+
+.filters label,
+.decision-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  padding: 8px;
+}
+
+button {
+  background: #214e34;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.jobs-table th,
+.jobs-table td {
+  border: 1px solid #d7d2c8;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 8px 12px;
+}
+
+.detail-list dt {
+  font-weight: 700;
+}
+
+.detail-list dd {
+  margin: 0;
+}
+
+.description {
+  white-space: pre-wrap;
+  background: #fff;
+  border: 1px solid #d7d2c8;
+  padding: 12px;
+}
+
+.notice {
+  background: #dbead6;
+  border: 1px solid #99b48f;
+  padding: 8px 12px;
+}

@@ -150,4 +150,4 @@ These paths are created automatically when needed.
 - The optional summarizer layer is presentation-only today: it returns short explanatory text from job data plus rule explanations and does not modify stored job records.
 - Model-backed summarizers are not implemented; the default behavior is a local fallback summarizer with no remote dependency.
 
-For current project limitations and deferred work, see [docs/codex_tasks/limitations.md](C:/Users/MRAka/PycharmProjects/job_agent/docs/codex_tasks/limitations.md).
+For current project limitations and deferred work, see [docs/codex_tasks/limitations.md](docs/codex_tasks/limitations.md).

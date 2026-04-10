@@ -31,6 +31,7 @@ Last updated: 2026-04-10
 - The CLI can open stored job URLs in the system browser for manual review, but it does not track browser-open events or review completion.
 - The local dashboard is intended for localhost use only and does not implement authentication, authorization, CSRF protection, or hardened deployment concerns.
 - The local dashboard uses simple server-rendered pages and basic form/query filters; it does not include pagination, sorting controls, live updates, or richer search ergonomics.
+- The local dashboard tolerates blank filter fields from its forms, but invalid non-numeric values for numeric filters such as `min_score` are not yet rendered as friendly validation errors in the UI.
 - The optional summarizer layer is currently presentation-only: it provides a local rule-based fallback and an interface for future injected model-backed summarizers, but it is not yet wired into the main CLI command surface.
 - No remote LLM provider integration, prompt configuration, or model-specific runtime settings are implemented; any future model-backed summarizer must remain explicitly optional and read-only.
 

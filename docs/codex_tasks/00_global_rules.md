@@ -14,6 +14,7 @@ Global rules:
 - Keep modules cohesive and testable.
 - Do not refactor unrelated files.
 - If a requested behavior is ambiguous, choose the simplest safe implementation.
+- Maintain `docs/codex_tasks/limitations.md` as the running record of current project limitations; update it after every completed task when limitations change or new ones are introduced.
 - End every task with:
   1. files changed
   2. what was implemented

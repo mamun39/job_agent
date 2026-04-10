@@ -23,6 +23,7 @@ class Settings:
     browser_user_data_dir: Path = Path("./data/browser")
     browser_screenshot_dir: Path = Path("./data/screenshots")
     browser_headless: bool = False
+    max_pages_per_query: int = 1
     discovery_queries: list[DiscoveryQuery] | None = None
 
 
@@ -62,12 +63,33 @@ def load_settings() -> Settings:
         browser_user_data_dir=browser_user_data_dir,
         browser_screenshot_dir=browser_screenshot_dir,
         browser_headless=_parse_bool(os.getenv("JOB_AGENT_BROWSER_HEADLESS", "false")),
+        max_pages_per_query=load_max_pages_per_query(),
         discovery_queries=load_discovery_queries(),
     )
 
 
 def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def load_max_pages_per_query() -> int:
+    """Load the conservative per-query page limit for live discovery."""
+    load_dotenv()
+    return _parse_positive_int(
+        os.getenv("JOB_AGENT_MAX_PAGES_PER_QUERY", "1"),
+        env_var="JOB_AGENT_MAX_PAGES_PER_QUERY",
+    )
+
+
+def _parse_positive_int(value: str, *, env_var: str) -> int:
+    normalized = value.strip()
+    try:
+        parsed = int(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{env_var} must be a positive integer") from exc
+    if parsed < 1:
+        raise ValueError(f"{env_var} must be a positive integer")
+    return parsed
 
 
 def load_discovery_queries() -> list[DiscoveryQuery]:

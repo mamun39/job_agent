@@ -16,15 +16,15 @@ Last updated: 2026-04-10
 - Playwright browser installation is environment-local and must be installed on each machine separately.
 - The Playwright fetch helper is generic and only supports URL navigation, page HTML capture, optional screenshots, and simple wait strategies; it does not include site-specific readiness checks.
 - The site adapter abstraction supports read-only discovery/parsing only.
-- Greenhouse support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
+- Greenhouse support is limited to listing-page parsing and common markup conventions, with conservative next-page traversal only when standard listing pagination links are exposed; detail-page parsing is not implemented.
 - Lever support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Indeed support is limited to listing-page parsing from saved HTML fixtures and common markup conventions; detail-page parsing and live-site hardening are not implemented.
 - LinkedIn support is limited to listing-page parsing from saved HTML fixtures and common public markup conventions; detail-page parsing and live-site hardening are not implemented.
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
-- Discovery query configuration can drive live listing-page discovery for supported adapters, but it is still limited to one fetched start URL per query.
+- Discovery query configuration can drive live listing-page discovery for supported adapters from one configured start URL per query, but multi-page traversal is implemented only for Greenhouse and remains limited by a conservative per-query page cap.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
 - No login automation, site navigation flows, application submission logic, or resume tailoring logic exists.
-- The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but it does not yet support pagination, multi-step navigation, or browser-driven detail-page collection.
+- The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but pagination is limited to conservative Greenhouse next-page traversal and it still does not support multi-step navigation or browser-driven detail-page collection.
 - The review workflow now supports both CLI and a minimal local dashboard, but there is still no richer terminal UI, authentication layer, or collaborative multi-user workflow.
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
 - Review decisions store only the latest explicit state per posting URL; there is no decision history or audit trail.

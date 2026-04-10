@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from job_agent.browser.fetch import fetch_listing_page_html
 from job_agent.browser.session import BrowserSessionManager
+from job_agent.config import load_max_pages_per_query
 from job_agent.core.dedupe import deduplicate_job_postings
 from job_agent.core.models import CrawlResult, DiscoveryQuery, JobPosting, SearchQuery
 from job_agent.sites.greenhouse import GreenhouseAdapter
@@ -72,15 +73,32 @@ def run_discovery_query(
     session: BrowserSessionManager,
     jobs_repo: JobsRepository,
     screenshot_name: str | None = None,
+    max_pages_per_query: int | None = None,
 ) -> CrawlResult:
     """Fetch a configured listing page, parse it with the matching adapter, and store jobs."""
     adapter = build_adapter_for_query(query)
-    html = fetch_listing_page_html(
-        session=session,
-        url=str(query.start_url),
-        screenshot_name=screenshot_name,
-    )
-    result = run_discovery(adapter=adapter, jobs_repo=jobs_repo, html=html)
+    if isinstance(adapter, GreenhouseAdapter):
+        result = _run_greenhouse_discovery_query(
+            adapter=adapter,
+            query=query,
+            session=session,
+            jobs_repo=jobs_repo,
+            screenshot_name=screenshot_name,
+            max_pages_per_query=max_pages_per_query or load_max_pages_per_query(),
+        )
+    else:
+        html = fetch_listing_page_html(
+            session=session,
+            url=str(query.start_url),
+            screenshot_name=screenshot_name,
+        )
+        result = run_discovery(adapter=adapter, jobs_repo=jobs_repo, html=html)
+        result.metadata.update(
+            {
+                "pages_fetched": 1,
+                "pages_parsed": 1 if result.metadata["parsed_count"] > 0 else 0,
+            }
+        )
     result.metadata.update(
         {
             "label": query.label,
@@ -93,5 +111,61 @@ def run_discovery_query(
     result.query = SearchQuery(
         keywords=list(query.include_keywords),
         location=query.location_hints[0] if query.location_hints else None,
+    )
+    return result
+
+
+def _run_greenhouse_discovery_query(
+    *,
+    adapter: GreenhouseAdapter,
+    query: DiscoveryQuery,
+    session: BrowserSessionManager,
+    jobs_repo: JobsRepository,
+    screenshot_name: str | None,
+    max_pages_per_query: int,
+) -> CrawlResult:
+    page_limit = max(1, max_pages_per_query)
+    next_url: str | None = str(query.start_url)
+    visited_urls: set[str] = set()
+    aggregated_postings: list[JobPosting] = []
+    pages_fetched = 0
+    pages_parsed = 0
+
+    while next_url is not None and pages_fetched < page_limit:
+        if next_url in visited_urls:
+            break
+
+        try:
+            html = fetch_listing_page_html(
+                session=session,
+                url=next_url,
+                screenshot_name=screenshot_name if pages_fetched == 0 else None,
+            )
+        except Exception:
+            if pages_fetched == 0:
+                raise
+            break
+
+        visited_urls.add(next_url)
+        pages_fetched += 1
+
+        postings = adapter.parse_job_postings(html=html)
+        if postings:
+            aggregated_postings.extend(postings)
+            pages_parsed += 1
+        elif pages_parsed > 0:
+            break
+
+        candidate_next_url = adapter.find_next_page_url(html=html, current_url=next_url)
+        if candidate_next_url is None or candidate_next_url in visited_urls:
+            break
+        next_url = candidate_next_url
+
+    result = run_discovery(adapter=adapter, jobs_repo=jobs_repo, parsed_postings=aggregated_postings)
+    result.metadata.update(
+        {
+            "pages_fetched": pages_fetched,
+            "pages_parsed": pages_parsed,
+        }
     )
     return result

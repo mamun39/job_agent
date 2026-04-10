@@ -88,6 +88,20 @@ class GreenhouseAdapter(JobSiteAdapter):
             )
         return postings
 
+    def find_next_page_url(
+        self,
+        *,
+        html: str | None = None,
+        page: SupportsPageContent | None = None,
+        current_url: str | None = None,
+    ) -> str | None:
+        """Return the next listing page URL when pagination is exposed."""
+        document = _resolve_html(html=html, page=page)
+        parser = _GreenhousePaginationParser(base_url=current_url or self._board_url)
+        parser.feed(document)
+        parser.close()
+        return parser.next_page_url
+
     def parse_job_detail(
         self,
         *,
@@ -254,3 +268,52 @@ class _GreenhouseListingsParser(HTMLParser):
             self._opening_text.append(data)
         if self._capture_field is not None:
             self._capture_buffer.append(data)
+
+
+class _GreenhousePaginationParser(HTMLParser):
+    def __init__(self, *, base_url: str | None) -> None:
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.next_page_url: str | None = None
+        self._capture_anchor = False
+        self._anchor_text: list[str] = []
+        self._anchor_href: str | None = None
+        self._anchor_has_next_hint = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.next_page_url is not None or tag != "a":
+            return
+
+        attrs_dict = dict(attrs)
+        href = attrs_dict.get("href")
+        if not href:
+            return
+
+        class_attr = attrs_dict.get("class", "") or ""
+        rel_attr = attrs_dict.get("rel", "") or ""
+        aria_label = attrs_dict.get("aria-label", "") or ""
+        title_attr = attrs_dict.get("title", "") or ""
+        data_qa = attrs_dict.get("data-qa", "") or ""
+        hint_tokens = " ".join([class_attr, rel_attr, aria_label, title_attr, data_qa]).casefold()
+
+        self._capture_anchor = True
+        self._anchor_text = []
+        self._anchor_href = href
+        self._anchor_has_next_hint = "next" in hint_tokens
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a" or not self._capture_anchor or self._anchor_href is None:
+            return
+
+        anchor_text = " ".join(part.strip() for part in self._anchor_text if part.strip()).casefold()
+        if self._anchor_has_next_hint or anchor_text.startswith("next"):
+            self.next_page_url = urljoin(self.base_url or "", self._anchor_href)
+
+        self._capture_anchor = False
+        self._anchor_text = []
+        self._anchor_href = None
+        self._anchor_has_next_hint = False
+
+    def handle_data(self, data: str) -> None:
+        if self._capture_anchor:
+            self._anchor_text.append(data)

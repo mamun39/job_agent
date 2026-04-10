@@ -15,6 +15,9 @@ class Settings:
     log_level: str = "INFO"
     data_dir: Path = Path("./data")
     db_path: Path = Path("./data/job_agent.db")
+    browser_user_data_dir: Path = Path("./data/browser")
+    browser_screenshot_dir: Path = Path("./data/screenshots")
+    browser_headless: bool = False
 
 
 def load_dotenv(dotenv_path: str | Path = ".env") -> None:
@@ -39,10 +42,22 @@ def load_settings() -> Settings:
     load_dotenv()
     data_dir = Path(os.getenv("JOB_AGENT_DATA_DIR", "./data"))
     db_path = Path(os.getenv("JOB_AGENT_DB_PATH", data_dir / "job_agent.db"))
+    browser_user_data_dir = Path(
+        os.getenv("JOB_AGENT_BROWSER_USER_DATA_DIR", data_dir / "browser")
+    )
+    browser_screenshot_dir = Path(
+        os.getenv("JOB_AGENT_BROWSER_SCREENSHOT_DIR", data_dir / "screenshots")
+    )
     return Settings(
         env=os.getenv("JOB_AGENT_ENV", "development"),
         log_level=os.getenv("JOB_AGENT_LOG_LEVEL", "INFO").upper(),
         data_dir=data_dir,
         db_path=db_path,
+        browser_user_data_dir=browser_user_data_dir,
+        browser_screenshot_dir=browser_screenshot_dir,
+        browser_headless=_parse_bool(os.getenv("JOB_AGENT_BROWSER_HEADLESS", "false")),
     )
 
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}

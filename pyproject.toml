@@ -12,7 +12,9 @@ license = { text = "MIT" }
 authors = [
   { name = "MRAka" }
 ]
-dependencies = []
+dependencies = [
+  "playwright>=1.54,<2",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -32,4 +34,3 @@ where = ["src"]
 minversion = "8.0"
 addopts = "-q"
 testpaths = ["tests"]
-

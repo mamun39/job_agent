@@ -10,6 +10,7 @@
 - Deduplicates by source identity, canonical URL, and exact fallback fields
 - Lists stored jobs, shows job details, exports CSV, and opens stored URLs in your default browser
 - Persists review decisions in storage
+- Provides an optional read-only summarizer interface for short job-match explanations, with a local fallback summarizer and no required external model service
 
 ## Current support
 
@@ -27,6 +28,7 @@ Still not implemented:
 - Detail-page parsing
 - Application submission
 - Web dashboard
+- Remote LLM provider integration for summaries
 
 ## Quick start
 
@@ -138,5 +140,7 @@ These paths are created automatically when needed.
 - Indeed and LinkedIn adapters currently exist for saved fixture parsing, not for configured live discovery.
 - YAML query files require `PyYAML`; JSON works out of the box.
 - Review decision persistence exists in storage, but dedicated CLI commands for updating/viewing those decisions are not fully wired yet.
+- The optional summarizer layer is presentation-only today: it returns short explanatory text from job data plus rule explanations and does not modify stored job records.
+- Model-backed summarizers are not implemented; the default behavior is a local fallback summarizer with no remote dependency.
 
 For current project limitations and deferred work, see [docs/codex_tasks/limitations.md](C:/Users/MRAka/PycharmProjects/job_agent/docs/codex_tasks/limitations.md).

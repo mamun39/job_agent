@@ -14,6 +14,7 @@ class Settings:
     env: str = "development"
     log_level: str = "INFO"
     data_dir: Path = Path("./data")
+    db_path: Path = Path("./data/job_agent.db")
 
 
 def load_dotenv(dotenv_path: str | Path = ".env") -> None:
@@ -36,9 +37,12 @@ def load_dotenv(dotenv_path: str | Path = ".env") -> None:
 def load_settings() -> Settings:
     """Build settings from environment variables."""
     load_dotenv()
+    data_dir = Path(os.getenv("JOB_AGENT_DATA_DIR", "./data"))
+    db_path = Path(os.getenv("JOB_AGENT_DB_PATH", data_dir / "job_agent.db"))
     return Settings(
         env=os.getenv("JOB_AGENT_ENV", "development"),
         log_level=os.getenv("JOB_AGENT_LOG_LEVEL", "INFO").upper(),
-        data_dir=Path(os.getenv("JOB_AGENT_DATA_DIR", "./data")),
+        data_dir=data_dir,
+        db_path=db_path,
     )
 

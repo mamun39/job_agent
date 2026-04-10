@@ -12,7 +12,7 @@ from job_agent.flows.discover import run_discovery_query
 from job_agent.logging import configure_logging
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
-from job_agent.ui.cli import export_jobs_csv, render_job_detail, render_jobs_list
+from job_agent.ui.cli import export_jobs_csv, open_job_in_browser, render_job_detail, render_jobs_list
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,6 +55,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_review_filters(review_export_parser)
     review_export_parser.add_argument("--limit", type=int, default=100)
     review_export_parser.add_argument("--output", required=True, help="CSV output path.")
+
+    open_parser = subparsers.add_parser(
+        "open",
+        help="Open a stored job URL in the default browser.",
+    )
+    open_target = open_parser.add_mutually_exclusive_group(required=True)
+    open_target.add_argument("--id", type=int, help="Stored job database id.")
+    open_target.add_argument("--url", help="Exact stored job URL.")
     return parser
 
 
@@ -134,6 +142,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         parser.error("review requires a subcommand")
+
+    if args.command == "open":
+        repo = JobsRepository(init_db(settings.db_path))
+        try:
+            opened_url = open_job_in_browser(repo._connection, job_id=args.id, url=args.url)
+        except (ValueError, RuntimeError) as exc:
+            print(str(exc))
+            return 1
+        print(f"Opened {opened_url}")
+        return 0
 
     return 0
 

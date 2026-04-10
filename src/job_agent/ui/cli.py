@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+import sqlite3
+import webbrowser
 
 from job_agent.core.models import JobPosting, ReviewDecision, ReviewStatus
 
@@ -128,6 +130,39 @@ def format_review_update_result(decision: ReviewDecision) -> str:
 def parse_review_decision(value: str) -> ReviewStatus:
     """Parse a CLI review decision value."""
     return ReviewStatus(value.strip().lower())
+
+
+def resolve_open_job_url(
+    connection: sqlite3.Connection,
+    *,
+    job_id: int | None = None,
+    url: str | None = None,
+) -> str:
+    """Resolve a stored job URL by database id or exact URL."""
+    if job_id is None and url is None:
+        raise ValueError("Provide either --id or --url.")
+    if job_id is not None and url is not None:
+        raise ValueError("Provide only one of --id or --url.")
+
+    if job_id is not None:
+        row = connection.execute("SELECT url FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"Job not found for id: {job_id}")
+        return str(row["url"])
+
+    row = connection.execute("SELECT url FROM jobs WHERE url = ?", (url,)).fetchone()
+    if row is None:
+        raise ValueError(f"Job not found for url: {url}")
+    return str(row["url"])
+
+
+def open_job_in_browser(connection: sqlite3.Connection, *, job_id: int | None = None, url: str | None = None) -> str:
+    """Resolve and open a stored job URL in the user's default browser."""
+    resolved_url = resolve_open_job_url(connection, job_id=job_id, url=url)
+    opened = webbrowser.open(resolved_url)
+    if not opened:
+        raise RuntimeError(f"Failed to open browser for url: {resolved_url}")
+    return resolved_url
 
 
 def _job_score(job: JobPosting) -> float | int | None:

@@ -26,6 +26,7 @@ Last updated: 2026-04-10
 - The review workflow is CLI-only and non-interactive; there is no dashboard or richer terminal UI.
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
 - The review decision persistence layer exists, but dedicated CLI parser commands for updating and viewing persisted decisions are not yet wired into the main command surface.
+- The CLI can open stored job URLs in the system browser for manual review, but it does not track browser-open events or review completion.
 
 ## Update rule
 

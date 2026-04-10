@@ -8,6 +8,7 @@ import sqlite3
 import webbrowser
 
 from job_agent.core.models import JobPosting, ReviewDecision, ReviewStatus
+from job_agent.llm.summarizer import JobSummarizer, summarize_job_match
 
 
 def render_jobs_list(jobs: list[JobPosting], *, decisions: dict[str, ReviewDecision] | None = None) -> str:
@@ -62,6 +63,21 @@ def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None
         lines.append("Metadata:")
         lines.extend(metadata_lines)
     return "\n".join(lines)
+
+
+def render_job_match_summary(
+    job: JobPosting,
+    *,
+    rule_explanations: list[str] | None = None,
+    summarizer: JobSummarizer | None = None,
+) -> str:
+    """Render a short optional match summary for CLI output."""
+    summary = summarize_job_match(
+        job,
+        rule_explanations=rule_explanations,
+        summarizer=summarizer,
+    )
+    return f"Match Summary: {summary}"
 
 
 def export_jobs_csv(jobs: list[JobPosting], output_path: str | Path) -> Path:

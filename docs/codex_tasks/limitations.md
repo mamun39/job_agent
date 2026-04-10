@@ -27,6 +27,8 @@ Last updated: 2026-04-10
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
 - The review decision persistence layer exists, but dedicated CLI parser commands for updating and viewing persisted decisions are not yet wired into the main command surface.
 - The CLI can open stored job URLs in the system browser for manual review, but it does not track browser-open events or review completion.
+- The optional summarizer layer is currently presentation-only: it provides a local rule-based fallback and an interface for future injected model-backed summarizers, but it is not yet wired into the main CLI command surface.
+- No remote LLM provider integration, prompt configuration, or model-specific runtime settings are implemented; any future model-backed summarizer must remain explicitly optional and read-only.
 
 ## Update rule
 

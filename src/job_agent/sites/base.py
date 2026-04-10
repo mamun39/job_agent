@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol
 
-from job_agent.core.models import ParsedJobDetail, ParsedJobListing, SiteCapabilities
+from job_agent.core.models import JobPosting, ParsedJobDetail, ParsedJobListing, SiteCapabilities
 
 
 class SupportsPageContent(Protocol):
@@ -46,4 +46,13 @@ class JobSiteAdapter(ABC):
         page: SupportsPageContent | None = None,
     ) -> ParsedJobDetail:
         """Parse one job detail page from HTML or a Playwright-like page object."""
+
+    def parse_job_postings(
+        self,
+        *,
+        html: str | None = None,
+        page: SupportsPageContent | None = None,
+    ) -> list[JobPosting]:
+        """Parse listing discovery results directly into normalized job postings."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not support direct JobPosting extraction")
 

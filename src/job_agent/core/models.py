@@ -280,11 +280,20 @@ class ParsedJobListing(BaseModel):
     title_hint: str | None = None
     company_hint: str | None = None
     location_hint: str | None = None
+    department_hint: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    @field_validator("source_site", "source_job_id", "title_hint", "company_hint", "location_hint", mode="before")
+    @field_validator(
+        "source_site",
+        "source_job_id",
+        "title_hint",
+        "company_hint",
+        "location_hint",
+        "department_hint",
+        mode="before",
+    )
     @classmethod
     def _normalize_listing_text(cls, value: str | None) -> str | None:
         if value is None:

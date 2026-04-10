@@ -41,10 +41,10 @@ class SeniorityLevel(StrEnum):
 
 
 class ReviewStatus(StrEnum):
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    NEEDS_REVIEW = "needs_review"
+    SAVED = "saved"
     SKIPPED = "skipped"
+    APPLIED_ELSEWHERE = "applied_elsewhere"
+    NEEDS_MANUAL_REVIEW = "needs_manual_review"
 
 
 def _utc_now() -> datetime:
@@ -245,11 +245,10 @@ class ReviewDecision(BaseModel):
     posting_url: HttpUrl
     decision: ReviewStatus
     decided_at: datetime = Field(default_factory=_utc_now)
-    reviewer: str | None = None
-    notes: str | None = None
+    note: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("reviewer", "notes", mode="before")
+    @field_validator("note", mode="before")
     @classmethod
     def _normalize_review_text(cls, value: str | None) -> str | None:
         if value is None:

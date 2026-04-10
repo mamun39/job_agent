@@ -37,6 +37,17 @@ SCHEMA_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_remote_status ON jobs(remote_status)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_posted_at ON jobs(posted_at)",
+    """
+    CREATE TABLE IF NOT EXISTS review_decisions (
+        posting_url TEXT PRIMARY KEY,
+        decision TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_review_decisions_decision ON review_decisions(decision)",
 )
 
 
@@ -59,4 +70,3 @@ def init_db(db_path: str | Path) -> sqlite3.Connection:
         connection.execute(statement)
     connection.commit()
     return connection
-

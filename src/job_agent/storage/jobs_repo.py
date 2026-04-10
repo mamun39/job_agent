@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 import json
 import sqlite3
 from typing import Any
 
-from job_agent.core.models import JobPosting
+from job_agent.core.models import JobPosting, ReviewDecision, ReviewStatus
 
 
 class JobsRepository:
@@ -136,6 +136,7 @@ class JobsRepository:
         source_site: str | None = None,
         min_score: float | None = None,
         reviewed: bool | None = None,
+        decision: ReviewStatus | str | None = None,
         company: str | None = None,
         remote_status: str | None = None,
         employment_type: str | None = None,
@@ -174,11 +175,76 @@ class JobsRepository:
         params.append(limit)
         rows = self._connection.execute(query, params).fetchall()
         jobs = [self._row_to_job(row) for row in rows]
-        return self._filter_review_fields(jobs, min_score=min_score, reviewed=reviewed)
+        return self._filter_review_fields(jobs, min_score=min_score, reviewed=reviewed, decision=decision)
 
     def fetch_for_review(self, *, url: str) -> JobPosting | None:
         """Fetch one stored job for CLI review output."""
         return self.fetch_by_url(url)
+
+    def set_review_decision(
+        self,
+        *,
+        posting_url: str,
+        decision: ReviewStatus | str,
+        note: str | None = None,
+        decided_at: datetime | None = None,
+    ) -> ReviewDecision:
+        """Persist or update a review decision for a stored job."""
+        normalized_decision = decision if isinstance(decision, ReviewStatus) else ReviewStatus(decision)
+        timestamp = decided_at or datetime.now(UTC)
+        payload = {
+            "posting_url": posting_url,
+            "decision": normalized_decision.value,
+            "decided_at": self._serialize_datetime(timestamp),
+            "note": note,
+        }
+        self._connection.execute(
+            """
+            INSERT INTO review_decisions (
+                posting_url,
+                decision,
+                decided_at,
+                note
+            ) VALUES (
+                :posting_url,
+                :decision,
+                :decided_at,
+                :note
+            )
+            ON CONFLICT(posting_url) DO UPDATE SET
+                decision = excluded.decision,
+                decided_at = excluded.decided_at,
+                note = excluded.note,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            payload,
+        )
+        self._connection.commit()
+        stored = self.get_review_decision(posting_url=posting_url)
+        if stored is None:
+            raise RuntimeError("review decision write succeeded but could not be reloaded")
+        return stored
+
+    def get_review_decision(self, *, posting_url: str) -> ReviewDecision | None:
+        """Fetch the persisted review decision for a posting URL."""
+        row = self._connection.execute(
+            """
+            SELECT posting_url, decision, decided_at, note
+            FROM review_decisions
+            WHERE posting_url = ?
+            """,
+            (posting_url,),
+        ).fetchone()
+        if row is None:
+            return None
+        return ReviewDecision.model_validate(
+            {
+                "posting_url": row["posting_url"],
+                "decision": row["decision"],
+                "decided_at": self._parse_datetime(row["decided_at"]),
+                "note": row["note"],
+            }
+        )
 
     def _job_to_row(self, job: JobPosting) -> dict[str, Any]:
         return {
@@ -228,6 +294,7 @@ class JobsRepository:
         *,
         min_score: float | None,
         reviewed: bool | None,
+        decision: ReviewStatus | str | None,
     ) -> list[JobPosting]:
         filtered = jobs
         if min_score is not None:
@@ -238,6 +305,28 @@ class JobsRepository:
                 and not isinstance(job.metadata.get("score"), bool)
                 and float(job.metadata["score"]) >= min_score
             ]
+        normalized_decision = None
+        if decision is not None:
+            normalized_decision = decision if isinstance(decision, ReviewStatus) else ReviewStatus(decision)
+            filtered = [
+                job
+                for job in filtered
+                if (review_decision := self.get_review_decision(posting_url=job.url.unicode_string())) is not None
+                and review_decision.decision is normalized_decision
+            ]
         if reviewed is not None:
-            filtered = [job for job in filtered if (job.metadata.get("reviewed") is True) is reviewed]
+            if reviewed:
+                filtered = [
+                    job
+                    for job in filtered
+                    if self.get_review_decision(posting_url=job.url.unicode_string()) is not None
+                    or job.metadata.get("reviewed") is True
+                ]
+            else:
+                filtered = [
+                    job
+                    for job in filtered
+                    if self.get_review_decision(posting_url=job.url.unicode_string()) is None
+                    and job.metadata.get("reviewed") is not True
+                ]
         return filtered

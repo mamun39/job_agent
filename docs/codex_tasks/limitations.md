@@ -22,7 +22,8 @@ Last updated: 2026-04-10
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
 - The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but it does not yet support pagination, multi-step navigation, or browser-driven detail-page collection.
 - The review workflow is CLI-only and non-interactive; there is no dashboard or richer terminal UI.
-- Review filtering by score and reviewed state currently depends on values stored in job `metadata` rather than dedicated schema fields.
+- Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
+- The review decision persistence layer exists, but dedicated CLI parser commands for updating and viewing persisted decisions are not yet wired into the main command surface.
 
 ## Update rule
 

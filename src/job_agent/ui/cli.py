@@ -5,18 +5,20 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from job_agent.core.models import JobPosting
+from job_agent.core.models import JobPosting, ReviewDecision, ReviewStatus
 
 
-def render_jobs_list(jobs: list[JobPosting]) -> str:
+def render_jobs_list(jobs: list[JobPosting], *, decisions: dict[str, ReviewDecision] | None = None) -> str:
     """Render a compact plain-text job listing view."""
     if not jobs:
         return "No jobs found."
 
+    decisions = decisions or {}
     lines = []
     for index, job in enumerate(jobs, start=1):
         score = _job_score(job)
-        reviewed = "reviewed" if _job_reviewed(job) else "unreviewed"
+        decision = decisions.get(job.url.unicode_string())
+        reviewed = decision.decision.value if decision else ("reviewed" if _job_reviewed(job) else "unreviewed")
         lines.append(
             f"{index}. [{job.source_site}] {job.title} | {job.company} | {job.location} | "
             f"score={score if score is not None else 'n/a'} | {reviewed}"
@@ -25,7 +27,7 @@ def render_jobs_list(jobs: list[JobPosting]) -> str:
     return "\n".join(lines)
 
 
-def render_job_detail(job: JobPosting) -> str:
+def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None) -> str:
     """Render a single job posting in a readable detail view."""
     metadata_lines = []
     for key in sorted(job.metadata):
@@ -42,10 +44,18 @@ def render_job_detail(job: JobPosting) -> str:
         f"Employment Type: {job.employment_type.value}",
         f"Seniority: {job.seniority.value}",
         f"Score: {_job_score(job) if _job_score(job) is not None else 'n/a'}",
-        f"Reviewed: {'yes' if _job_reviewed(job) else 'no'}",
+        f"Reviewed: {'yes' if decision is not None or _job_reviewed(job) else 'no'}",
         "Description:",
         job.description_text,
     ]
+    if decision is not None:
+        lines.extend(
+            [
+                f"Decision: {decision.decision.value}",
+                f"Decision Time: {decision.decided_at.isoformat()}",
+                f"Decision Note: {decision.note or 'n/a'}",
+            ]
+        )
     if metadata_lines:
         lines.append("Metadata:")
         lines.extend(metadata_lines)
@@ -71,6 +81,7 @@ def export_jobs_csv(jobs: list[JobPosting], output_path: str | Path) -> Path:
                 "seniority",
                 "score",
                 "reviewed",
+                "decision",
             ],
         )
         writer.writeheader()
@@ -88,9 +99,35 @@ def export_jobs_csv(jobs: list[JobPosting], output_path: str | Path) -> Path:
                     "seniority": job.seniority.value,
                     "score": _job_score(job) if _job_score(job) is not None else "",
                     "reviewed": "true" if _job_reviewed(job) else "false",
+                    "decision": "",
                 }
             )
     return path
+
+
+def render_review_decision(decision: ReviewDecision | None) -> str:
+    """Render a persisted review decision for plain CLI output."""
+    if decision is None:
+        return "No review decision recorded."
+    return "\n".join(
+        [
+            f"URL: {decision.posting_url}",
+            f"Decision: {decision.decision.value}",
+            f"Decision Time: {decision.decided_at.isoformat()}",
+            f"Note: {decision.note or 'n/a'}",
+        ]
+    )
+
+
+def format_review_update_result(decision: ReviewDecision) -> str:
+    """Render a one-line confirmation for a persisted review update."""
+    note = f" note={decision.note}" if decision.note else ""
+    return f"Updated decision for {decision.posting_url}: {decision.decision.value}{note}"
+
+
+def parse_review_decision(value: str) -> ReviewStatus:
+    """Parse a CLI review decision value."""
+    return ReviewStatus(value.strip().lower())
 
 
 def _job_score(job: JobPosting) -> float | int | None:

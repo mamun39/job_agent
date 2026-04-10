@@ -16,6 +16,8 @@ Last updated: 2026-04-10
 - The site adapter abstraction supports read-only discovery/parsing only.
 - Greenhouse support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Lever support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
+- Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
+- Discovery query configuration is validated and loaded, but it is not yet connected to a crawl runner or orchestration pipeline.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
 - No concrete filtering or orchestration pipeline ties storage, scoring, browser sessions, and adapters together yet.
 

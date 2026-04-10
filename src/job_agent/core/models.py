@@ -168,6 +168,43 @@ class SearchQuery(BaseModel):
         return _normalize_text(value)
 
 
+class DiscoveryQuery(BaseModel):
+    """Configured discovery entrypoint for one site run."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    source_site: str
+    label: str
+    start_url: HttpUrl
+    include_keywords: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
+    location_hints: list[str] = Field(default_factory=list)
+
+    @field_validator("source_site", "label", mode="before")
+    @classmethod
+    def _normalize_required_text(cls, value: str) -> str:
+        return _normalize_text(value)
+
+    @field_validator("source_site")
+    @classmethod
+    def _normalize_query_source_site(cls, value: str) -> str:
+        normalized = value.lower().replace(" ", "_").replace("-", "_")
+        if not normalized.replace("_", "").isalnum():
+            raise ValueError("source_site must contain letters, numbers, spaces, hyphens, or underscores")
+        return normalized
+
+    @field_validator("include_keywords", "exclude_keywords", "location_hints", mode="before")
+    @classmethod
+    def _normalize_string_list(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list):
+            raise ValueError("value must be a list of strings")
+        return [_normalize_text(item) for item in value]
+
+
 class CrawlResult(BaseModel):
     """Result of a crawl or fetch attempt."""
 

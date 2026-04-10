@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import os
+from typing import Any
 
+from pydantic import ValidationError
+
+from job_agent.core.models import DiscoveryQuery
 
 @dataclass(slots=True)
 class Settings:
@@ -18,6 +23,7 @@ class Settings:
     browser_user_data_dir: Path = Path("./data/browser")
     browser_screenshot_dir: Path = Path("./data/screenshots")
     browser_headless: bool = False
+    discovery_queries: list[DiscoveryQuery] | None = None
 
 
 def load_dotenv(dotenv_path: str | Path = ".env") -> None:
@@ -56,8 +62,63 @@ def load_settings() -> Settings:
         browser_user_data_dir=browser_user_data_dir,
         browser_screenshot_dir=browser_screenshot_dir,
         browser_headless=_parse_bool(os.getenv("JOB_AGENT_BROWSER_HEADLESS", "false")),
+        discovery_queries=load_discovery_queries(),
     )
 
 
 def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def load_discovery_queries() -> list[DiscoveryQuery]:
+    """Load discovery query config from a file path or JSON environment variable."""
+    file_path = os.getenv("JOB_AGENT_DISCOVERY_QUERIES_FILE")
+    raw_json = os.getenv("JOB_AGENT_DISCOVERY_QUERIES")
+
+    if file_path:
+        payload = _load_query_payload_from_file(Path(file_path))
+    elif raw_json:
+        try:
+            payload = json.loads(raw_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JOB_AGENT_DISCOVERY_QUERIES JSON: {exc.msg}") from exc
+    else:
+        return []
+
+    if not isinstance(payload, list):
+        raise ValueError("Discovery query config must be a list of query objects")
+
+    try:
+        return [DiscoveryQuery.model_validate(item) for item in payload]
+    except ValidationError as exc:
+        raise ValueError(f"Invalid discovery query config: {exc}") from exc
+
+
+def _load_query_payload_from_file(path: Path) -> Any:
+    if not path.is_file():
+        raise ValueError(f"Discovery query config file does not exist: {path}")
+
+    suffix = path.suffix.lower()
+    text = path.read_text(encoding="utf-8")
+
+    if suffix == ".json":
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid discovery query JSON file: {exc.msg}") from exc
+
+    if suffix in {".yaml", ".yml"}:
+        try:
+            import yaml
+        except ImportError as exc:
+            raise ValueError(
+                "YAML query config requires PyYAML to be installed, or use JSON instead"
+            ) from exc
+
+        try:
+            payload = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid discovery query YAML file: {exc}") from exc
+        return [] if payload is None else payload
+
+    raise ValueError("Discovery query config file must use .json, .yaml, or .yml")

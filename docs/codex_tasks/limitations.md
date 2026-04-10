@@ -27,7 +27,7 @@ Last updated: 2026-04-10
 - The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but it does not yet support pagination, multi-step navigation, or browser-driven detail-page collection.
 - The review workflow now supports both CLI and a minimal local dashboard, but there is still no richer terminal UI, authentication layer, or collaborative multi-user workflow.
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
-- The review decision persistence layer exists, but dedicated CLI parser commands for updating and viewing persisted decisions are not yet wired into the main command surface.
+- Review decisions store only the latest explicit state per posting URL; there is no decision history or audit trail.
 - The CLI can open stored job URLs in the system browser for manual review, but it does not track browser-open events or review completion.
 - The local dashboard is intended for localhost use only and does not implement authentication, authorization, CSRF protection, or hardened deployment concerns.
 - The local dashboard uses simple server-rendered pages and basic form/query filters; it does not include pagination, sorting controls, live updates, or richer search ergonomics.

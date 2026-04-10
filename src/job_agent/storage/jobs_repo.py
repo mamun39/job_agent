@@ -185,9 +185,15 @@ class JobsRepository:
         jobs = [self._row_to_job(row) for row in rows]
         return self._filter_review_fields(jobs, min_score=min_score, reviewed=reviewed, decision=decision)
 
-    def fetch_for_review(self, *, url: str) -> JobPosting | None:
-        """Fetch one stored job for CLI review output."""
-        return self.fetch_by_url(url)
+    def fetch_for_review(self, *, job_id: int | None = None, url: str | None = None) -> JobPosting | None:
+        """Fetch one stored job for CLI review output by id or exact URL."""
+        if job_id is None and url is None:
+            raise ValueError("Provide either --id or --url.")
+        if job_id is not None and url is not None:
+            raise ValueError("Provide only one of --id or --url.")
+        if job_id is not None:
+            return self.fetch_by_id(job_id)
+        return self.fetch_by_url(str(url))
 
     def set_review_decision(
         self,

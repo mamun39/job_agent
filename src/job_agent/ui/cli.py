@@ -23,7 +23,8 @@ def render_jobs_list(jobs: list[JobPosting], *, decisions: dict[str, ReviewDecis
         decision = decisions.get(job.url.unicode_string())
         reviewed = decision.decision.value if decision else ("reviewed" if _job_reviewed(job) else "unreviewed")
         lines.append(
-            f"{index}. [{job.source_site}] {job.title} | {job.company} | {job.location} | "
+            f"{index}. id={job.metadata.get('db_id', 'n/a')} [{job.source_site}] "
+            f"{job.title} | {job.company} | {job.location} | "
             f"score={score if score is not None else 'n/a'} | {reviewed}"
         )
         lines.append(f"   {job.url}")
@@ -37,6 +38,7 @@ def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None
         metadata_lines.append(f"{key}: {job.metadata[key]}")
 
     lines = [
+        f"Job ID: {job.metadata.get('db_id', 'n/a')}",
         f"Title: {job.title}",
         f"Company: {job.company}",
         f"Location: {job.location}",
@@ -48,15 +50,15 @@ def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None
         f"Seniority: {job.seniority.value}",
         f"Score: {_job_score(job) if _job_score(job) is not None else 'n/a'}",
         f"Reviewed: {'yes' if decision is not None or _job_reviewed(job) else 'no'}",
+        f"Decision: {decision.decision.value if decision is not None else 'n/a'}",
+        f"Decision Note: {decision.note or 'n/a' if decision is not None else 'n/a'}",
         "Description:",
         job.description_text,
     ]
     if decision is not None:
         lines.extend(
             [
-                f"Decision: {decision.decision.value}",
                 f"Decision Time: {decision.decided_at.isoformat()}",
-                f"Decision Note: {decision.note or 'n/a'}",
             ]
         )
     if metadata_lines:
@@ -145,7 +147,12 @@ def format_review_update_result(decision: ReviewDecision) -> str:
 
 def parse_review_decision(value: str) -> ReviewStatus:
     """Parse a CLI review decision value."""
-    return ReviewStatus(value.strip().lower())
+    normalized = value.strip().lower()
+    try:
+        return ReviewStatus(normalized)
+    except ValueError as exc:
+        supported = ", ".join(ReviewStatus.choices())
+        raise ValueError(f"Invalid review decision '{value}'. Supported decisions: {supported}") from exc
 
 
 def resolve_open_job_url(

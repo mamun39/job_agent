@@ -13,6 +13,7 @@ Global rules:
 - Keep dependencies minimal.
 - Keep modules cohesive and testable.
 - Do not refactor unrelated files.
+- When extending discovery, prefer site-local logic over generic frameworks unless at least two existing adapters already require the exact same behavior.
 - If a requested behavior is ambiguous, choose the simplest safe implementation.
 - Maintain `docs/codex_tasks/limitations.md` as the running record of current project limitations; update it after every completed task when limitations change or new ones are introduced.
 - End every task with:

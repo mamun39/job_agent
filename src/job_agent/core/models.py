@@ -46,6 +46,11 @@ class ReviewStatus(StrEnum):
     APPLIED_ELSEWHERE = "applied_elsewhere"
     NEEDS_MANUAL_REVIEW = "needs_manual_review"
 
+    @classmethod
+    def choices(cls) -> tuple[str, ...]:
+        """Return supported persisted review decision values."""
+        return tuple(status.value for status in cls)
+
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)

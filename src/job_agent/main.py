@@ -12,7 +12,15 @@ from job_agent.flows.discover import run_discovery_query
 from job_agent.logging import configure_logging
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
-from job_agent.ui.cli import export_jobs_csv, open_job_in_browser, render_job_detail, render_jobs_list
+from job_agent.ui.cli import (
+    export_jobs_csv,
+    format_review_update_result,
+    open_job_in_browser,
+    parse_review_decision,
+    render_job_detail,
+    render_jobs_list,
+    render_review_decision,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,12 +57,26 @@ def build_parser() -> argparse.ArgumentParser:
     review_list_parser.add_argument("--limit", type=int, default=100)
 
     review_show_parser = review_subparsers.add_parser("show", help="Show one stored job.")
-    review_show_parser.add_argument("--url", required=True, help="Job URL to display.")
+    _add_review_target(review_show_parser)
 
     review_export_parser = review_subparsers.add_parser("export", help="Export filtered jobs to CSV.")
     _add_review_filters(review_export_parser)
     review_export_parser.add_argument("--limit", type=int, default=100)
     review_export_parser.add_argument("--output", required=True, help="CSV output path.")
+
+    review_decision_parser = review_subparsers.add_parser(
+        "decision",
+        help="Show the stored review decision for one job.",
+    )
+    _add_review_target(review_decision_parser)
+
+    review_set_decision_parser = review_subparsers.add_parser(
+        "set-decision",
+        help="Persist an explicit review decision for one job.",
+    )
+    _add_review_target(review_set_decision_parser)
+    review_set_decision_parser.add_argument("--decision", required=True, help="Decision to store.")
+    review_set_decision_parser.add_argument("--note", help="Optional note stored with the decision.")
 
     open_parser = subparsers.add_parser(
         "open",
@@ -121,28 +143,69 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo = JobsRepository(init_db(settings.db_path))
 
         if args.review_command == "list":
+            try:
+                decision_filter = _parse_review_decision_filter(args.decision)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
             jobs = repo.list_jobs(
                 source_site=args.source_site,
                 min_score=args.min_score,
                 reviewed=_parse_review_filter(args.reviewed),
+                decision=decision_filter,
                 limit=args.limit,
             )
-            print(render_jobs_list(jobs))
+            decisions = repo.get_review_decisions_by_url(job.url.unicode_string() for job in jobs)
+            print(render_jobs_list(jobs, decisions=decisions))
             return 0
 
         if args.review_command == "show":
-            job = repo.fetch_for_review(url=args.url)
+            job = repo.fetch_for_review(job_id=args.id, url=args.url)
             if job is None:
-                print(f"Job not found: {args.url}")
+                print(_format_missing_job_message(job_id=args.id, url=args.url))
                 return 1
-            print(render_job_detail(job))
+            decision = repo.get_review_decision(posting_url=job.url.unicode_string())
+            print(render_job_detail(job, decision=decision))
+            return 0
+
+        if args.review_command == "decision":
+            job = repo.fetch_for_review(job_id=args.id, url=args.url)
+            if job is None:
+                print(_format_missing_job_message(job_id=args.id, url=args.url))
+                return 1
+            decision = repo.get_review_decision(posting_url=job.url.unicode_string())
+            print(render_review_decision(decision))
+            return 0
+
+        if args.review_command == "set-decision":
+            job = repo.fetch_for_review(job_id=args.id, url=args.url)
+            if job is None:
+                print(_format_missing_job_message(job_id=args.id, url=args.url))
+                return 1
+            try:
+                parsed_decision = parse_review_decision(args.decision)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            decision = repo.set_review_decision(
+                posting_url=job.url.unicode_string(),
+                decision=parsed_decision,
+                note=args.note,
+            )
+            print(format_review_update_result(decision))
             return 0
 
         if args.review_command == "export":
+            try:
+                decision_filter = _parse_review_decision_filter(args.decision)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
             jobs = repo.list_jobs(
                 source_site=args.source_site,
                 min_score=args.min_score,
                 reviewed=_parse_review_filter(args.reviewed),
+                decision=decision_filter,
                 limit=args.limit,
             )
             output_path = export_jobs_csv(jobs, args.output)
@@ -175,6 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _add_review_filters(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source-site", help="Filter by source site.")
     parser.add_argument("--min-score", type=float, help="Filter by minimum numeric score.")
+    parser.add_argument("--decision", help="Filter by explicit persisted review decision.")
     parser.add_argument(
         "--reviewed",
         choices=["reviewed", "unreviewed", "all"],
@@ -183,12 +247,30 @@ def _add_review_filters(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_review_target(parser: argparse.ArgumentParser) -> None:
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--id", type=int, help="Stored job database id.")
+    target.add_argument("--url", help="Exact stored job URL.")
+
+
 def _parse_review_filter(value: str) -> bool | None:
     if value == "reviewed":
         return True
     if value == "unreviewed":
         return False
     return None
+
+
+def _parse_review_decision_filter(value: str | None):
+    if value is None:
+        return None
+    return parse_review_decision(value)
+
+
+def _format_missing_job_message(*, job_id: int | None, url: str | None) -> str:
+    if job_id is not None:
+        return f"Job not found for id: {job_id}"
+    return f"Job not found for url: {url}"
 
 
 if __name__ == "__main__":

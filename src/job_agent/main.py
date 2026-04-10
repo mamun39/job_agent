@@ -96,10 +96,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         jobs_repo=repo,
                         screenshot_name=screenshot_name,
                     )
+                    status = "warn" if result.metadata["parsed_count"] == 0 else "ok"
                     print(
-                        f"[ok] {query.label} ({query.source_site}) stored={result.metadata['stored_count']} "
-                        f"inserted={result.metadata['inserted_count']} updated={result.metadata['updated_count']} "
-                        f"duplicates={result.metadata['duplicate_count']}"
+                        f"[{status}] {query.label} ({query.source_site}) parsed={result.metadata['parsed_count']} "
+                        f"stored={result.metadata['stored_count']} inserted={result.metadata['inserted_count']} "
+                        f"updated={result.metadata['updated_count']} duplicates={result.metadata['duplicate_count']}"
                     )
                 except Exception as exc:  # pragma: no cover - exercised by CLI integration tests
                     failures += 1

@@ -13,6 +13,7 @@ authors = [
   { name = "MRAka" }
 ]
 dependencies = [
+  "pydantic>=2.12,<3",
   "playwright>=1.54,<2",
 ]
 

@@ -127,55 +127,117 @@ class _GreenhouseListingsParser(HTMLParser):
         self._in_opening = False
         self._opening_text: list[str] = []
         self._current: dict[str, Any] | None = None
+        self._current_container: str | None = None
+        self._current_depth = 0
+        self._current_department: str | None = None
         self._capture_field: str | None = None
+        self._capture_tag: str | None = None
         self._capture_buffer: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = dict(attrs)
         class_attr = attrs_dict.get("class", "") or ""
+        classes = set(class_attr.split())
         self._stack.append(tag)
 
         if tag == "section" and "level-0" in class_attr:
             self._in_opening = True
             self._opening_text = []
 
-        if tag == "div" and "opening" in class_attr.split():
+        if tag == "div" and "opening" in classes:
             self._current = {}
+            self._current_container = "div"
+            self._current_depth = 1
+        elif tag == "tr" and "TableRow" in classes:
+            self._current = {}
+            self._current_container = "tr"
+            self._current_depth = 1
+        elif tag == "tr" and "job-post" in classes:
+            self._current = {}
+            self._current_container = "tr"
+            self._current_depth = 1
+            if self._current_department:
+                self._current["department"] = self._current_department
+
+        if self._current is not None and tag == self._current_container and not (
+            (tag == "div" and "opening" in classes)
+            or (tag == "tr" and "TableRow" in classes)
+            or (tag == "tr" and "job-post" in classes)
+        ):
+            self._current_depth += 1
 
         if self._current is None:
+            if tag == "h3" and "section-header" in classes:
+                self._capture_field = "group_department"
+                self._capture_tag = "h3"
+                self._capture_buffer = []
             return
 
-        if tag == "a" and "opening" in class_attr.split():
+        if tag == "a" and ("opening" in classes or "JobsListings__link" in classes):
             href = attrs_dict.get("href")
             if href:
                 self._current["url"] = urljoin(self.base_url or "", href)
                 source_job_id = attrs_dict.get("data-mapped")
                 if source_job_id:
                     self._current["source_job_id"] = source_job_id
+                else:
+                    self._current["source_job_id"] = self._current["url"].rstrip("/").rsplit("/", 1)[-1]
             self._capture_field = "title"
+            self._capture_tag = "a"
             self._capture_buffer = []
             return
 
-        if tag == "span" and "location" in class_attr.split():
+        if tag == "a" and "href" in attrs_dict:
+            href = attrs_dict.get("href")
+            if href and ("job-boards.greenhouse.io" in href or "/jobs/" in href):
+                self._current["url"] = urljoin(self.base_url or "", href)
+                self._current["source_job_id"] = self._current["url"].rstrip("/").rsplit("/", 1)[-1]
+                return
+
+        if tag == "span" and ("location" in classes or "JobsListings__locationDisplayName" in classes):
             self._capture_field = "location"
+            self._capture_tag = "span"
             self._capture_buffer = []
             return
 
-        if tag == "span" and ("department" in class_attr.split() or "team" in class_attr.split()):
+        if tag == "p" and "body__secondary" in class_attr:
+            self._capture_field = "location"
+            self._capture_tag = "p"
+            self._capture_buffer = []
+            return
+
+        if tag == "p" and "body--medium" in class_attr and self._current.get("title") is None:
+            self._capture_field = "title"
+            self._capture_tag = "p"
+            self._capture_buffer = []
+            return
+
+        if (tag == "span" and ("department" in classes or "team" in classes)) or (
+            tag == "li" and "JobsListings__departmentsListItem" in classes
+        ):
             self._capture_field = "department"
+            self._capture_tag = tag
             self._capture_buffer = []
 
     def handle_endtag(self, tag: str) -> None:
-        if self._capture_field is not None and self._stack and self._stack[-1] == tag:
+        if self._capture_field is not None and self._capture_tag == tag:
             value = " ".join(part.strip() for part in self._capture_buffer if part.strip()).strip()
-            if value and self._current is not None:
-                self._current[self._capture_field] = value
+            if value:
+                if self._capture_field == "group_department":
+                    self._current_department = value
+                elif self._current is not None:
+                    self._current[self._capture_field] = value
             self._capture_field = None
+            self._capture_tag = None
             self._capture_buffer = []
 
-        if tag == "div" and self._current and self._current.get("url") and self._current.get("title"):
-            self.items.append(self._current)
-            self._current = None
+        if self._current is not None and tag == self._current_container:
+            self._current_depth -= 1
+            if self._current_depth == 0:
+                if self._current.get("url") and self._current.get("title"):
+                    self.items.append(self._current)
+                self._current = None
+                self._current_container = None
 
         if tag == "section" and self._in_opening:
             company_text = " ".join(part.strip() for part in self._opening_text if part.strip()).strip()

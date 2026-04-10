@@ -125,10 +125,15 @@ class _LeverListingsParser(HTMLParser):
         self.items: list[dict[str, str]] = []
         self.company_name: str | None = None
         self._current: dict[str, str] | None = None
+        self._current_depth = 0
+        self._pending_url: str | None = None
+        self._pending_source_job_id: str | None = None
         self._capture_field: str | None = None
+        self._capture_tag: str | None = None
         self._capture_buffer: list[str] = []
         self._capture_company = False
         self._company_buffer: list[str] = []
+        self._current_department: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = dict(attrs)
@@ -139,44 +144,92 @@ class _LeverListingsParser(HTMLParser):
             self._capture_company = True
             self._company_buffer = []
 
-        if tag == "a" and "posting-btn-submit" in classes:
-            self._current = {}
+        if tag == "div" and "posting-category-title" in classes:
+            self._capture_field = "group_department"
+            self._capture_tag = "div"
+            self._capture_buffer = []
+            return
+
+        if tag == "a" and "posting-btn-submit" in classes and self._current is None:
             href = attrs_dict.get("href")
             if href:
                 resolved_url = urljoin(self.base_url or "", href)
-                self._current["url"] = resolved_url
-                self._current["source_job_id"] = resolved_url.rstrip("/").split("/")[-1]
+                self._pending_url = resolved_url
+                self._pending_source_job_id = resolved_url.rstrip("/").split("/")[-1]
+            return
+
+        if tag == "div" and "posting" in classes and self._current is None:
+            self._current = {}
+            self._current_depth = 1
+            if self._pending_url:
+                self._current["url"] = self._pending_url
+            if self._pending_source_job_id:
+                self._current["source_job_id"] = self._pending_source_job_id
+            posting_id = attrs_dict.get("data-qa-posting-id")
+            if posting_id:
+                self._current["source_job_id"] = posting_id
+            if self._current_department:
+                self._current["department"] = self._current_department
             return
 
         if self._current is None:
             return
 
-        if tag == "h5" and "posting-name" in classes:
+        if tag == "div":
+            self._current_depth += 1
+
+        if tag == "a" and ("posting-title" in classes or "posting-btn-submit" in classes):
+            href = attrs_dict.get("href")
+            if href and "url" not in self._current:
+                resolved_url = urljoin(self.base_url or "", href)
+                self._current["url"] = resolved_url
+                self._current.setdefault("source_job_id", resolved_url.rstrip("/").split("/")[-1])
+            return
+
+        if tag == "h5" and ("posting-name" in classes or attrs_dict.get("data-qa") == "posting-name"):
             self._capture_field = "title"
+            self._capture_tag = "h5"
             self._capture_buffer = []
             return
 
         if tag == "span" and "sort-by-location" in classes:
             self._capture_field = "location"
+            self._capture_tag = "span"
+            self._capture_buffer = []
+            return
+
+        if tag == "span" and "workplaceTypes" in classes:
+            self._capture_field = "workplace_type"
+            self._capture_tag = "span"
             self._capture_buffer = []
             return
 
         if tag == "span" and ("sort-by-team" in classes or "sort-by-commitment" in classes):
             if "department" not in self._current:
                 self._capture_field = "department"
+                self._capture_tag = "span"
                 self._capture_buffer = []
 
     def handle_endtag(self, tag: str) -> None:
-        if self._capture_field is not None:
+        if self._capture_field is not None and self._capture_tag == tag:
             value = " ".join(part.strip() for part in self._capture_buffer if part.strip()).strip()
-            if value and self._current is not None:
-                self._current[self._capture_field] = value
+            if value:
+                if self._capture_field == "group_department":
+                    self._current_department = value
+                elif self._current is not None:
+                    self._current[self._capture_field] = value
             self._capture_field = None
+            self._capture_tag = None
             self._capture_buffer = []
 
-        if tag == "a" and self._current and self._current.get("url") and self._current.get("title"):
-            self.items.append(self._current)
-            self._current = None
+        if tag == "div" and self._current is not None:
+            self._current_depth -= 1
+            if self._current_depth == 0:
+                if self._current.get("url") and self._current.get("title"):
+                    self.items.append(self._current)
+                self._current = None
+                self._pending_url = None
+                self._pending_source_job_id = None
 
         if self._capture_company and tag in {"h2", "h3", "div"}:
             company_text = " ".join(part.strip() for part in self._company_buffer if part.strip()).strip()

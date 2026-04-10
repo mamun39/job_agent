@@ -88,5 +88,5 @@ def test_cli_discover_prints_summary_and_surfaces_failures(tmp_path, monkeypatch
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "[ok] Greenhouse ok (greenhouse) stored=2 inserted=2 updated=0 duplicates=0" in captured.out
+    assert "[ok] Greenhouse ok (greenhouse) parsed=2 stored=2 inserted=2 updated=0 duplicates=0" in captured.out
     assert "[error] Lever fail (lever) fetch failed" in captured.out

@@ -4,7 +4,7 @@ Last updated: 2026-04-10
 
 ## Current limitations
 
-- The CLI is still a minimal bootstrap and does not expose real workflow subcommands yet.
+- The CLI exposes discovery and review commands, but it remains a plain command-line interface without richer interactive workflows.
 - `.env` parsing is intentionally simple and only supports basic `KEY=VALUE` lines.
 - Logging is structured but minimal and does not yet include richer context fields or log sinks.
 - SQLite storage uses a single lightweight schema with no migration framework.
@@ -21,6 +21,8 @@ Last updated: 2026-04-10
 - Discovery query configuration can drive live listing-page discovery for supported adapters, but it is still limited to one fetched start URL per query.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
 - The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but it does not yet support pagination, multi-step navigation, or browser-driven detail-page collection.
+- The review workflow is CLI-only and non-interactive; there is no dashboard or richer terminal UI.
+- Review filtering by score and reviewed state currently depends on values stored in job `metadata` rather than dedicated schema fields.
 
 ## Update rule
 

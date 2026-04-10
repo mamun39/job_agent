@@ -134,6 +134,8 @@ class JobsRepository:
         self,
         *,
         source_site: str | None = None,
+        min_score: float | None = None,
+        reviewed: bool | None = None,
         company: str | None = None,
         remote_status: str | None = None,
         employment_type: str | None = None,
@@ -171,7 +173,12 @@ class JobsRepository:
         query = f"{query} ORDER BY discovered_at DESC, id DESC LIMIT ?"
         params.append(limit)
         rows = self._connection.execute(query, params).fetchall()
-        return [self._row_to_job(row) for row in rows]
+        jobs = [self._row_to_job(row) for row in rows]
+        return self._filter_review_fields(jobs, min_score=min_score, reviewed=reviewed)
+
+    def fetch_for_review(self, *, url: str) -> JobPosting | None:
+        """Fetch one stored job for CLI review output."""
+        return self.fetch_by_url(url)
 
     def _job_to_row(self, job: JobPosting) -> dict[str, Any]:
         return {
@@ -214,3 +221,23 @@ class JobsRepository:
 
     def _parse_datetime(self, value: str | None) -> datetime | None:
         return datetime.fromisoformat(value) if value is not None else None
+
+    def _filter_review_fields(
+        self,
+        jobs: list[JobPosting],
+        *,
+        min_score: float | None,
+        reviewed: bool | None,
+    ) -> list[JobPosting]:
+        filtered = jobs
+        if min_score is not None:
+            filtered = [
+                job
+                for job in filtered
+                if isinstance(job.metadata.get("score"), (int, float))
+                and not isinstance(job.metadata.get("score"), bool)
+                and float(job.metadata["score"]) >= min_score
+            ]
+        if reviewed is not None:
+            filtered = [job for job in filtered if (job.metadata.get("reviewed") is True) is reviewed]
+        return filtered

@@ -27,6 +27,24 @@ def fetch_page_html(
     return page.content()
 
 
+def fetch_listing_page_html(
+    *,
+    session: BrowserSessionManager,
+    url: str,
+    screenshot_name: str | None = None,
+    wait_until: str = "networkidle",
+    wait_delay_ms: int = 0,
+) -> str:
+    """Fetch listing page HTML with safe generic defaults for discovery."""
+    return fetch_page_html(
+        session=session,
+        url=url,
+        wait_until=wait_until,
+        wait_delay_ms=wait_delay_ms,
+        screenshot_name=screenshot_name,
+    )
+
+
 def fetch_page_html_with_screenshot(
     *,
     session: BrowserSessionManager,

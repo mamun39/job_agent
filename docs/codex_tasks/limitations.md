@@ -18,9 +18,9 @@ Last updated: 2026-04-10
 - Greenhouse support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Lever support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
-- Discovery query configuration is validated and loaded, but it is not yet connected to a full query-driven crawl runner.
+- Discovery query configuration can drive live listing-page discovery for supported adapters, but it is still limited to one fetched start URL per query.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
-- The discovery flow currently supports synchronous adapter runs from provided HTML or pre-parsed postings only; it is not yet wired to the Playwright fetch helper for live collection or pagination.
+- The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but it does not yet support pagination, multi-step navigation, or browser-driven detail-page collection.
 
 ## Update rule
 

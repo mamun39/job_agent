@@ -17,6 +17,11 @@ class GreenhouseAdapter(JobSiteAdapter):
         self._board_url = board_url
         self._company_name = company_name
 
+    @classmethod
+    def from_start_url(cls, start_url: str) -> GreenhouseAdapter:
+        """Build an adapter for a configured Greenhouse listing URL."""
+        return cls(board_url=start_url)
+
     @property
     def site_name(self) -> str:
         return "greenhouse"
@@ -187,4 +192,3 @@ class _GreenhouseListingsParser(HTMLParser):
             self._opening_text.append(data)
         if self._capture_field is not None:
             self._capture_buffer.append(data)
-

@@ -47,6 +47,17 @@ def test_dashboard_lists_and_filters_jobs(tmp_path) -> None:
     assert "Apply Filters" in response.text
 
 
+def test_dashboard_ignores_empty_min_score_filter(tmp_path) -> None:
+    repo = JobsRepository(init_db(tmp_path / "dashboard.db"))
+    _insert_job(repo, url="https://example.com/jobs/1", title="Backend Engineer", score=90)
+    client = TestClient(create_dashboard_app(db_path=tmp_path / "dashboard.db"))
+
+    response = client.get("/jobs", params={"min_score": ""})
+
+    assert response.status_code == 200
+    assert "Backend Engineer" in response.text
+
+
 def test_dashboard_shows_job_detail_and_updates_review_decision(tmp_path) -> None:
     repo = JobsRepository(init_db(tmp_path / "dashboard.db"))
     job = _insert_job(repo, url="https://example.com/jobs/1", title="Backend Engineer")

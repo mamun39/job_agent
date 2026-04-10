@@ -39,9 +39,10 @@ def create_dashboard_app(*, db_path: str | Path) -> FastAPI:
         location_contains: str | None = None,
         reviewed: str = "all",
         decision: str | None = None,
-        min_score: float | None = None,
+        min_score: str | None = None,
         limit: int = 100,
     ) -> HTMLResponse:
+        parsed_min_score = _parse_optional_float(min_score)
         jobs_repo = get_repo()
         jobs = jobs_repo.list_jobs(
             source_site=source_site or None,
@@ -49,7 +50,7 @@ def create_dashboard_app(*, db_path: str | Path) -> FastAPI:
             location_contains=location_contains or None,
             reviewed=_parse_reviewed_filter(reviewed),
             decision=decision or None,
-            min_score=min_score,
+            min_score=parsed_min_score,
             limit=limit,
         )
         decision_map = jobs_repo.get_review_decisions_by_url(job.url.unicode_string() for job in jobs)
@@ -80,7 +81,7 @@ def create_dashboard_app(*, db_path: str | Path) -> FastAPI:
                     "location_contains": location_contains or "",
                     "reviewed": reviewed,
                     "decision": decision or "",
-                    "min_score": "" if min_score is None else min_score,
+                    "min_score": "" if parsed_min_score is None else parsed_min_score,
                     "limit": limit,
                 },
             },
@@ -133,3 +134,12 @@ def _parse_reviewed_filter(value: str) -> bool | None:
     if normalized == "unreviewed":
         return False
     return None
+
+
+def _parse_optional_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return float(normalized)

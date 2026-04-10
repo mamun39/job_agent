@@ -13,13 +13,14 @@ Last updated: 2026-04-10
 - Relevance scoring uses fixed in-code weights and substring matching rather than externalized rules or semantic matching.
 - Browser session tests validate wrapper behavior with fakes rather than launching a real browser end to end.
 - Playwright browser installation is environment-local and must be installed on each machine separately.
+- The Playwright fetch helper is generic and only supports URL navigation, page HTML capture, optional screenshots, and simple wait strategies; it does not include site-specific readiness checks.
 - The site adapter abstraction supports read-only discovery/parsing only.
 - Greenhouse support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Lever support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
 - Discovery query configuration is validated and loaded, but it is not yet connected to a full query-driven crawl runner.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
-- The discovery flow currently supports synchronous adapter runs from provided HTML or pre-parsed postings only; it does not perform live browsing, pagination, or Playwright-driven collection.
+- The discovery flow currently supports synchronous adapter runs from provided HTML or pre-parsed postings only; it is not yet wired to the Playwright fetch helper for live collection or pagination.
 
 ## Update rule
 

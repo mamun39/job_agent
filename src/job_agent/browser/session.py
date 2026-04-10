@@ -65,6 +65,12 @@ class BrowserSessionManager:
             return pages[0]
         return context.new_page()
 
+    def open_url(self, url: str, *, wait_until: str = "networkidle") -> Page:
+        """Open a URL in a managed page and wait for the requested load state."""
+        page = self.open_page()
+        page.goto(url, wait_until=wait_until)
+        return page
+
     def take_screenshot(self, *, name: str, page: Page | None = None) -> Path:
         """Capture a page screenshot into the configured directory."""
         self.screenshot_dir.mkdir(parents=True, exist_ok=True)

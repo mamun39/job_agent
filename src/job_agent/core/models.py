@@ -218,3 +218,45 @@ class ReviewDecision(BaseModel):
         if value is None:
             return None
         return _normalize_text(value)
+
+
+class ScoringCriteria(BaseModel):
+    """Deterministic rule inputs for job relevance scoring."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    include_title_keywords: list[str] = Field(default_factory=list)
+    exclude_title_keywords: list[str] = Field(default_factory=list)
+    include_company_keywords: list[str] = Field(default_factory=list)
+    exclude_company_keywords: list[str] = Field(default_factory=list)
+    include_location_keywords: list[str] = Field(default_factory=list)
+    exclude_location_keywords: list[str] = Field(default_factory=list)
+    preferred_remote_statuses: list[RemoteStatus] = Field(default_factory=list)
+    preferred_employment_types: list[EmploymentType] = Field(default_factory=list)
+    preferred_seniority_levels: list[SeniorityLevel] = Field(default_factory=list)
+
+    @field_validator(
+        "include_title_keywords",
+        "exclude_title_keywords",
+        "include_company_keywords",
+        "exclude_company_keywords",
+        "include_location_keywords",
+        "exclude_location_keywords",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_keyword_list(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list):
+            raise ValueError("value must be a list of strings")
+        return [_normalize_text(item).casefold() for item in value]
+
+
+class ScoreResult(BaseModel):
+    """Deterministic score and explanation output."""
+
+    score: int
+    explanations: list[str] = Field(default_factory=list)

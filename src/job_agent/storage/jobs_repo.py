@@ -69,12 +69,17 @@ class JobsRepository:
 
     def upsert_job(self, job: JobPosting) -> JobPosting:
         """Insert or update a job posting using deduplication keys."""
+        stored, _ = self.upsert_job_with_status(job)
+        return stored
+
+    def upsert_job_with_status(self, job: JobPosting) -> tuple[JobPosting, bool]:
+        """Insert or update a job posting and report whether it was newly inserted."""
         existing = self.fetch_by_url(job.url.unicode_string())
         if existing is None and job.source_job_id:
             existing = self.fetch_by_source_identity(job.source_site, job.source_job_id)
 
         if existing is None:
-            return self.insert_job(job)
+            return self.insert_job(job), True
 
         payload = self._job_to_row(job)
         payload["existing_url"] = existing.url.unicode_string()
@@ -104,7 +109,7 @@ class JobsRepository:
         stored = self.fetch_by_url(job.url.unicode_string())
         if stored is None:
             raise RuntimeError("upsert succeeded but job could not be reloaded")
-        return stored
+        return stored, False
 
     def fetch_by_url(self, url: str) -> JobPosting | None:
         """Fetch a single job posting by canonical URL."""
@@ -209,4 +214,3 @@ class JobsRepository:
 
     def _parse_datetime(self, value: str | None) -> datetime | None:
         return datetime.fromisoformat(value) if value is not None else None
-

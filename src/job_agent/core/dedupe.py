@@ -77,6 +77,42 @@ def same_fallback_identity(left: JobPosting, right: JobPosting) -> bool:
     return build_comparison_inputs(left) == build_comparison_inputs(right)
 
 
+def normalize_job_posting(job: JobPosting) -> JobPosting:
+    """Return a copy of the posting with a canonicalized URL."""
+    payload = job.model_dump()
+    payload["url"] = canonicalize_url(str(job.url))
+    return JobPosting.model_validate(payload)
+
+
+def deduplicate_job_postings(jobs: Iterable[JobPosting]) -> list[JobPosting]:
+    """Deduplicate jobs deterministically using source id, canonical URL, then exact fallback fields."""
+    deduplicated: list[JobPosting] = []
+    seen_source_keys: set[str] = set()
+    seen_url_keys: set[str] = set()
+    seen_fallback_keys: set[tuple[str, str, str]] = set()
+
+    for job in jobs:
+        normalized = normalize_job_posting(job)
+        source_key = _source_identity_key(normalized)
+        url_key = normalized.canonical_url
+        fallback_key = build_comparison_inputs(normalized)
+
+        if source_key and source_key in seen_source_keys:
+            continue
+        if url_key in seen_url_keys:
+            continue
+        if fallback_key in seen_fallback_keys:
+            continue
+
+        deduplicated.append(normalized)
+        seen_url_keys.add(url_key)
+        seen_fallback_keys.add(fallback_key)
+        if source_key:
+            seen_source_keys.add(source_key)
+
+    return deduplicated
+
+
 def _normalize_query(query: str) -> str:
     items = parse_qsl(query, keep_blank_values=False)
     filtered = [
@@ -99,3 +135,9 @@ def _is_default_port(scheme: str, port: int) -> bool:
 
 def _normalize_free_text(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _source_identity_key(job: JobPosting) -> str | None:
+    if not job.source_job_id:
+        return None
+    return f"{job.source_site}:{job.source_job_id.casefold()}"

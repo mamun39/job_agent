@@ -18,6 +18,7 @@ Last updated: 2026-04-10
 - Greenhouse support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Lever support is limited to listing-page parsing and common markup conventions; detail-page parsing is not implemented.
 - Indeed support is limited to listing-page parsing from saved HTML fixtures and common markup conventions; detail-page parsing and live-site hardening are not implemented.
+- LinkedIn support is limited to listing-page parsing from saved HTML fixtures and common public markup conventions; detail-page parsing and live-site hardening are not implemented.
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
 - Discovery query configuration can drive live listing-page discovery for supported adapters, but it is still limited to one fetched start URL per query.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.

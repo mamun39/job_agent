@@ -260,3 +260,50 @@ class ScoreResult(BaseModel):
 
     score: int
     explanations: list[str] = Field(default_factory=list)
+
+
+class SiteCapabilities(BaseModel):
+    """Capability flags for a site adapter."""
+
+    supports_listing_html_parse: bool = True
+    supports_listing_page_parse: bool = False
+    supports_detail_html_parse: bool = True
+    supports_detail_page_parse: bool = False
+
+
+class ParsedJobListing(BaseModel):
+    """Lightweight listing discovery result before full detail parsing."""
+
+    source_site: str
+    url: HttpUrl
+    source_job_id: str | None = None
+    title_hint: str | None = None
+    company_hint: str | None = None
+    location_hint: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @field_validator("source_site", "source_job_id", "title_hint", "company_hint", "location_hint", mode="before")
+    @classmethod
+    def _normalize_listing_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_text(value)
+
+    @field_validator("source_site")
+    @classmethod
+    def _normalize_listing_source_site(cls, value: str) -> str:
+        normalized = value.lower().replace(" ", "_").replace("-", "_")
+        if not normalized.replace("_", "").isalnum():
+            raise ValueError("source_site must contain letters, numbers, spaces, hyphens, or underscores")
+        return normalized
+
+
+class ParsedJobDetail(BaseModel):
+    """Read-only parse result for one job detail document."""
+
+    listing: ParsedJobListing
+    posting: JobPosting
+    raw_html: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)

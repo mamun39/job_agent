@@ -472,6 +472,28 @@ class HardFilterResult(BaseModel):
         return self
 
 
+class RejectedJobMatch(BaseModel):
+    """One discovered job rejected by hard filters with explicit reasons."""
+
+    job: JobPosting
+    rejection_reasons: list[str] = Field(default_factory=list)
+
+    @field_validator("rejection_reasons", mode="before")
+    @classmethod
+    def _normalize_match_rejection_reasons(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+
+class PromptSearchResult(BaseModel):
+    """End-to-end prompt-driven search result."""
+
+    intent: SearchIntent
+    plan: SearchPlan
+    discovered_jobs_count: int = 0
+    matched_jobs: list[JobPosting] = Field(default_factory=list)
+    rejected_jobs: list[RejectedJobMatch] = Field(default_factory=list)
+
+
 class CrawlResult(BaseModel):
     """Result of a crawl or fetch attempt."""
 

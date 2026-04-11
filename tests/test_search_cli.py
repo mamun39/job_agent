@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from job_agent.config import Settings
-from job_agent.core.models import JobPosting, PromptSearchResult, RejectedJobMatch, SearchIntent, SearchPlan
+from job_agent.core.models import MatchedJobMatch, JobPosting, PromptSearchResult, RejectedJobMatch, SearchIntent, SearchPlan
 from job_agent.main import main
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
@@ -29,7 +29,16 @@ def _matched_job(*, url: str = "https://boards.greenhouse.io/example/jobs/1") ->
     )
 
 
-def _prompt_result(*, matched_jobs: list[JobPosting], rejected_jobs: list[RejectedJobMatch]) -> PromptSearchResult:
+def _matched(job: JobPosting, *, score: int = 15, reasons: list[str] | None = None) -> MatchedJobMatch:
+    return MatchedJobMatch(
+        job=job,
+        hard_filter_explanation="Passed explicit hard filters.",
+        score=score,
+        score_reasons=reasons or ["+15 company matched include keyword 'example co'"],
+    )
+
+
+def _prompt_result(*, matched_jobs: list[MatchedJobMatch], rejected_jobs: list[RejectedJobMatch]) -> PromptSearchResult:
     intent = SearchIntent(
         prompt_text="Find AI security roles in Canada",
         constraints={
@@ -71,7 +80,7 @@ def test_search_command_accepts_inline_prompt_and_shows_summary(monkeypatch, tmp
     monkeypatch.setattr("job_agent.main.BrowserSessionManager.from_settings", lambda settings: _FakeSession())
     monkeypatch.setattr(
         "job_agent.main.run_prompt_search",
-        lambda **kwargs: _prompt_result(matched_jobs=[_matched_job()], rejected_jobs=[]),
+        lambda **kwargs: _prompt_result(matched_jobs=[_matched(_matched_job())], rejected_jobs=[]),
     )
 
     exit_code = main(["search", "Find AI security roles in Canada"])
@@ -80,7 +89,9 @@ def test_search_command_accepts_inline_prompt_and_shows_summary(monkeypatch, tmp
     assert exit_code == 0
     assert "Intent: titles=AI Security Engineer | include=security | locations=Canada" in captured.out
     assert "Summary: boards=1 discovered=1 matched=1 rejected=0" in captured.out
-    assert "AI Security Engineer | Example Co | Remote - Canada" in captured.out
+    assert "AI Security Engineer | Example Co | Remote - Canada | score=15" in captured.out
+    assert "pass=Passed explicit hard filters." in captured.out
+    assert "reasons=+15 company matched include keyword 'example co'" in captured.out
 
 
 def test_search_command_accepts_prompt_file_and_can_show_rejections(monkeypatch, tmp_path, capsys) -> None:
@@ -94,6 +105,7 @@ def test_search_command_accepts_prompt_file_and_can_show_rejections(monkeypatch,
         rejected = RejectedJobMatch(
             job=_matched_job(url="https://boards.greenhouse.io/example/jobs/2"),
             rejection_reasons=["Excluded keyword 'crypto' matched description"],
+            explanation="Excluded keyword 'crypto' matched description",
         )
         return _prompt_result(matched_jobs=[], rejected_jobs=[rejected])
 
@@ -124,7 +136,7 @@ def test_search_command_can_store_new_matches(monkeypatch, tmp_path, capsys) -> 
     monkeypatch.setattr("job_agent.main.BrowserSessionManager.from_settings", lambda settings: _FakeSession())
     monkeypatch.setattr(
         "job_agent.main.run_prompt_search",
-        lambda **kwargs: _prompt_result(matched_jobs=[stored_job, new_job], rejected_jobs=[]),
+        lambda **kwargs: _prompt_result(matched_jobs=[_matched(stored_job), _matched(new_job)], rejected_jobs=[]),
     )
 
     exit_code = main(["search", "Find AI security roles in Canada", "--store-matches"])

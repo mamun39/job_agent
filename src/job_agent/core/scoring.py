@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from job_agent.core.models import JobPosting, ScoreResult, ScoringCriteria
+from job_agent.core.models import (
+    JobPosting,
+    RemotePreference,
+    RemoteStatus,
+    ScoreResult,
+    ScoringCriteria,
+    SearchConstraint,
+)
 
 INCLUDE_KEYWORD_POINTS = 15
 EXCLUDE_KEYWORD_PENALTY = -40
@@ -23,6 +30,26 @@ def rescore_job_posting(job: JobPosting, criteria: ScoringCriteria | None = None
     """Score a stored job using the current default rules unless criteria are provided."""
     active_criteria = criteria or build_default_scoring_criteria()
     return score_job_posting(job, active_criteria)
+
+
+def build_scoring_criteria_from_constraints(constraints: SearchConstraint) -> ScoringCriteria:
+    """Build deterministic scoring criteria from parsed search constraints."""
+    preferred_remote_statuses: list[RemoteStatus] = []
+    if constraints.remote_preference in {RemotePreference.REMOTE_ONLY, RemotePreference.REMOTE_PREFERRED}:
+        preferred_remote_statuses = [RemoteStatus.REMOTE]
+    elif constraints.remote_preference is RemotePreference.HYBRID_PREFERRED:
+        preferred_remote_statuses = [RemoteStatus.HYBRID]
+
+    return ScoringCriteria(
+        include_title_keywords=_dedupe_casefolded(
+            list(constraints.include_keywords) + list(constraints.target_titles)
+        ),
+        include_company_keywords=_dedupe_casefolded(list(constraints.include_companies)),
+        exclude_company_keywords=_dedupe_casefolded(list(constraints.exclude_companies)),
+        include_location_keywords=_dedupe_casefolded(list(constraints.location_constraints)),
+        preferred_remote_statuses=preferred_remote_statuses,
+        preferred_seniority_levels=list(constraints.seniority_preferences),
+    )
 
 
 def score_job_posting(job: JobPosting, criteria: ScoringCriteria) -> ScoreResult:
@@ -121,3 +148,15 @@ def _apply_preference_rule(
 
     explanations.append(f"{penalty_points} {label} did not match preferred values")
     return penalty_points
+
+
+def _dedupe_casefolded(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        normalized = value.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered

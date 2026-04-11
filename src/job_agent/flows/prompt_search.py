@@ -12,10 +12,12 @@ from job_agent.core.models import (
     BoardRegistryEntry,
     DiscoveryOptions,
     DiscoveryQuery,
+    MatchedJobMatch,
     PromptSearchResult,
     RejectedJobMatch,
     SearchPlanQuery,
 )
+from job_agent.core.scoring import build_scoring_criteria_from_constraints, score_job_posting
 from job_agent.core.plan_compiler import compile_search_intent
 from job_agent.flows.discover import run_discovery_query
 from job_agent.storage.jobs_repo import JobsRepository
@@ -45,10 +47,11 @@ def run_prompt_search(
     if not executable_queries:
         raise ValueError("Compiled search plan did not resolve to any executable board URLs.")
 
-    matched_jobs = []
+    matched_jobs: list[MatchedJobMatch] = []
     rejected_jobs: list[RejectedJobMatch] = []
     discovered_jobs_count = 0
     evaluation_now = now or datetime.now(UTC)
+    scoring_criteria = build_scoring_criteria_from_constraints(intent.constraints)
 
     for query in executable_queries:
         result = run_discovery_query(
@@ -61,10 +64,22 @@ def run_prompt_search(
         for job in result.postings:
             filter_result = evaluate_job_against_intent(job, intent=intent, now=evaluation_now)
             if filter_result.passed:
-                matched_jobs.append(job)
+                score_result = score_job_posting(job, scoring_criteria)
+                matched_jobs.append(
+                    MatchedJobMatch(
+                        job=job,
+                        hard_filter_explanation="Passed explicit hard filters.",
+                        score=score_result.score,
+                        score_reasons=_top_score_reasons(score_result.explanations),
+                    )
+                )
             else:
                 rejected_jobs.append(
-                    RejectedJobMatch(job=job, rejection_reasons=list(filter_result.rejection_reasons))
+                    RejectedJobMatch(
+                        job=job,
+                        rejection_reasons=list(filter_result.rejection_reasons),
+                        explanation="; ".join(filter_result.rejection_reasons),
+                    )
                 )
 
     return PromptSearchResult(
@@ -85,3 +100,8 @@ def _plan_query_to_discovery_query(plan_query: SearchPlanQuery) -> DiscoveryQuer
         exclude_keywords=list(plan_query.exclude_keywords),
         location_hints=list(plan_query.location_constraints),
     )
+
+
+def _top_score_reasons(explanations: list[str], *, limit: int = 3) -> list[str]:
+    positive = [item for item in explanations if item.startswith("+")]
+    return positive[:limit]

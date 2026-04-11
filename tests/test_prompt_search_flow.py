@@ -97,6 +97,11 @@ def test_prompt_search_runs_end_to_end_with_seeded_board(monkeypatch, tmp_path) 
     assert result.discovered_jobs_count == 1
     assert len(result.matched_jobs) == 1
     assert result.rejected_jobs == []
+    assert result.matched_jobs[0].job.title == "Backend Engineer"
+    assert result.matched_jobs[0].hard_filter_explanation == "Passed explicit hard filters."
+    assert result.matched_jobs[0].score >= 0
+    assert result.matched_jobs[0].score_reasons
+    assert any("matched include keyword" in item or "matched preferred value" in item for item in result.matched_jobs[0].score_reasons)
     assert result.plan.queries[0].board_url is not None
     assert str(result.plan.queries[0].board_url) == "https://boards.greenhouse.io/stripe"
 
@@ -131,6 +136,7 @@ def test_prompt_search_handles_partially_parsed_prompt(monkeypatch, tmp_path) ->
     assert result.intent.constraints.include_companies == ["Stripe"]
     assert result.discovered_jobs_count == 1
     assert len(result.matched_jobs) == 1
+    assert result.matched_jobs[0].hard_filter_explanation == "Passed explicit hard filters."
 
 
 def test_prompt_search_fails_honestly_when_no_executable_board_resolves(tmp_path) -> None:
@@ -188,3 +194,4 @@ def test_prompt_search_returns_rejected_jobs_with_reasons(monkeypatch, tmp_path)
     assert len(result.rejected_jobs) == 1
     assert result.rejected_jobs[0].job.url.unicode_string() == "https://boards.greenhouse.io/stripe/jobs/3"
     assert result.rejected_jobs[0].rejection_reasons == ["Excluded keyword 'crypto' matched description"]
+    assert result.rejected_jobs[0].explanation == "Excluded keyword 'crypto' matched description"

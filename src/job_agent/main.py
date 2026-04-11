@@ -11,7 +11,7 @@ from typing import Any
 
 from job_agent.browser.session import BrowserSessionManager
 from job_agent.config import load_settings
-from job_agent.core.models import CrawlResult, DiscoveryOptions, JobPosting
+from job_agent.core.models import CrawlResult, DiscoveryOptions, MatchedJobMatch
 from job_agent.flows.discover import run_discovery_query
 from job_agent.flows.prompt_search import run_prompt_search
 from job_agent.logging import configure_logging
@@ -32,6 +32,7 @@ from job_agent.ui.cli import (
     render_discovery_summary,
     render_job_detail,
     render_jobs_list,
+    render_matched_jobs,
     render_prompt_search_summary,
     render_rejected_jobs,
     render_review_decision,
@@ -240,7 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             session.close()
 
         print(render_prompt_search_summary(result))
-        print(render_jobs_list(result.matched_jobs))
+        print(render_matched_jobs(result.matched_jobs))
         if args.show_rejected:
             print("Rejected Jobs:")
             print(render_rejected_jobs(result.rejected_jobs))
@@ -463,9 +464,10 @@ def _resolve_search_prompt(*, prompt: str | None, prompt_file: str | None) -> st
     raise ValueError("Provide a prompt or --prompt-file.")
 
 
-def _store_new_matched_jobs(repo: JobsRepository, jobs: Sequence[JobPosting]) -> int:
+def _store_new_matched_jobs(repo: JobsRepository, jobs: Sequence[MatchedJobMatch]) -> int:
     inserted_count = 0
-    for job in jobs:
+    for matched in jobs:
+        job = matched.job
         existing = repo.fetch_by_url(job.url.unicode_string())
         if existing is None and job.source_job_id:
             existing = repo.fetch_by_source_identity(job.source_site, job.source_job_id)

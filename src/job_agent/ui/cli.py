@@ -11,6 +11,7 @@ from job_agent.core.models import (
     CrawlResult,
     JobPosting,
     JobStatus,
+    MatchedJobMatch,
     PromptSearchResult,
     RejectedJobMatch,
     ReviewDecision,
@@ -217,6 +218,25 @@ def render_prompt_search_summary(result: PromptSearchResult) -> str:
     )
 
 
+def render_matched_jobs(matched_jobs: list[MatchedJobMatch]) -> str:
+    """Render matched prompt-search jobs with concise deterministic explanations."""
+    if not matched_jobs:
+        return "No matched jobs."
+    lines: list[str] = []
+    for index, matched in enumerate(matched_jobs, start=1):
+        job = matched.job
+        lines.append(
+            f"{index}. [{job.source_site}] {job.title} | {job.company} | {job.location} | score={matched.score}"
+        )
+        lines.append(f"   {job.url}")
+        lines.append(f"   pass={matched.hard_filter_explanation}")
+        if matched.score_reasons:
+            lines.append(f"   reasons={'; '.join(matched.score_reasons)}")
+        else:
+            lines.append("   reasons=No positive scoring signals from current deterministic rules.")
+    return "\n".join(lines)
+
+
 def render_rejected_jobs(rejected_jobs: list[RejectedJobMatch]) -> str:
     """Render rejected prompt-search jobs and their rejection reasons."""
     if not rejected_jobs:
@@ -228,7 +248,7 @@ def render_rejected_jobs(rejected_jobs: list[RejectedJobMatch]) -> str:
             f"{index}. [{job.source_site}] {job.title} | {job.company} | {job.location}"
         )
         lines.append(f"   {job.url}")
-        lines.append(f"   reasons={'; '.join(rejected.rejection_reasons)}")
+        lines.append(f"   reasons={rejected.explanation or '; '.join(rejected.rejection_reasons)}")
     return "\n".join(lines)
 
 

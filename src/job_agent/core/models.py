@@ -477,10 +477,37 @@ class RejectedJobMatch(BaseModel):
 
     job: JobPosting
     rejection_reasons: list[str] = Field(default_factory=list)
+    explanation: str | None = None
 
     @field_validator("rejection_reasons", mode="before")
     @classmethod
     def _normalize_match_rejection_reasons(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+    @field_validator("explanation", mode="before")
+    @classmethod
+    def _normalize_rejection_explanation(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_text(value)
+
+
+class MatchedJobMatch(BaseModel):
+    """One discovered job accepted by hard filters with deterministic match explanations."""
+
+    job: JobPosting
+    hard_filter_explanation: str
+    score: int
+    score_reasons: list[str] = Field(default_factory=list)
+
+    @field_validator("hard_filter_explanation", mode="before")
+    @classmethod
+    def _normalize_hard_filter_explanation(cls, value: str) -> str:
+        return _normalize_text(value)
+
+    @field_validator("score_reasons", mode="before")
+    @classmethod
+    def _normalize_score_reasons(cls, value: Any) -> list[str]:
         return _normalize_string_list(value)
 
 
@@ -490,7 +517,7 @@ class PromptSearchResult(BaseModel):
     intent: SearchIntent
     plan: SearchPlan
     discovered_jobs_count: int = 0
-    matched_jobs: list[JobPosting] = Field(default_factory=list)
+    matched_jobs: list[MatchedJobMatch] = Field(default_factory=list)
     rejected_jobs: list[RejectedJobMatch] = Field(default_factory=list)
 
 

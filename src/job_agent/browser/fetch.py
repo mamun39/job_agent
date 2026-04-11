@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from job_agent.browser.session import BrowserSessionManager
+
+LOGGER = logging.getLogger(__name__)
 
 
 def fetch_page_html(
@@ -16,7 +19,19 @@ def fetch_page_html(
     screenshot_name: str | None = None,
 ) -> str:
     """Open a URL, optionally wait longer, and return the page HTML."""
-    page = session.open_url(url, wait_until=wait_until)
+    try:
+        page = session.open_url(url, wait_until=wait_until)
+    except Exception:
+        LOGGER.exception(
+            "fetch_failed",
+            extra={
+                "event": "fetch_failed",
+                "url": url,
+                "wait_until": wait_until,
+                "wait_delay_ms": wait_delay_ms,
+            },
+        )
+        raise
 
     if wait_delay_ms > 0:
         page.wait_for_timeout(wait_delay_ms)
@@ -54,7 +69,19 @@ def fetch_page_html_with_screenshot(
     wait_delay_ms: int = 0,
 ) -> tuple[str, Path]:
     """Open a URL, return HTML, and persist a screenshot."""
-    page = session.open_url(url, wait_until=wait_until)
+    try:
+        page = session.open_url(url, wait_until=wait_until)
+    except Exception:
+        LOGGER.exception(
+            "fetch_failed",
+            extra={
+                "event": "fetch_failed",
+                "url": url,
+                "wait_until": wait_until,
+                "wait_delay_ms": wait_delay_ms,
+            },
+        )
+        raise
 
     if wait_delay_ms > 0:
         page.wait_for_timeout(wait_delay_ms)

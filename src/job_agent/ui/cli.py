@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 import webbrowser
 
-from job_agent.core.models import JobPosting, ReviewDecision, ReviewStatus
+from job_agent.core.models import CrawlResult, JobPosting, ReviewDecision, ReviewStatus
 from job_agent.llm.summarizer import JobSummarizer, summarize_job_match
 
 
@@ -80,6 +80,21 @@ def render_job_match_summary(
         summarizer=summarizer,
     )
     return f"Match Summary: {summary}"
+
+
+def render_discovery_summary(result: CrawlResult) -> str:
+    """Render a concise discovery summary from crawl metadata."""
+    metadata = result.metadata
+    return (
+        f"queries={metadata.get('queries_attempted', 0)} "
+        f"pages={metadata.get('pages_fetched', 0)} failed_pages={metadata.get('pages_failed', 0)} "
+        f"jobs={metadata.get('jobs_parsed', metadata.get('parsed_count', 0))} "
+        f"inserted={metadata.get('jobs_inserted', metadata.get('inserted_count', 0))} "
+        f"updated={metadata.get('jobs_updated', metadata.get('updated_count', 0))} "
+        f"duplicates={metadata.get('jobs_skipped_duplicates', metadata.get('duplicate_count', 0))} "
+        f"detail_pages={metadata.get('detail_pages_fetched', 0)} "
+        f"detail_failures={metadata.get('detail_parse_failures', 0)}"
+    )
 
 
 def export_jobs_csv(jobs: list[JobPosting], output_path: str | Path) -> Path:

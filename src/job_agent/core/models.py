@@ -364,3 +364,21 @@ class DiscoveryOptions(BaseModel):
 
     enrich_greenhouse_details: bool = False
     enrich_lever_details: bool = False
+
+
+class DiscoveryTelemetry(BaseModel):
+    """Local structured counters for one discovery run."""
+
+    queries_attempted: int = 0
+    pages_fetched: int = 0
+    pages_failed: int = 0
+    jobs_parsed: int = 0
+    jobs_inserted: int = 0
+    jobs_updated: int = 0
+    jobs_skipped_duplicates: int = 0
+    detail_pages_fetched: int = 0
+    detail_parse_failures: int = 0
+
+    def as_metadata(self) -> dict[str, int]:
+        """Return telemetry fields using the metadata keys exposed in crawl results."""
+        return self.model_dump()

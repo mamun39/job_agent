@@ -15,6 +15,7 @@ Last updated: 2026-04-10
 - Browser session tests validate wrapper behavior with fakes rather than launching a real browser end to end.
 - Playwright browser installation is environment-local and must be installed on each machine separately.
 - The Playwright fetch helper is generic and only supports URL navigation, page HTML capture, optional screenshots, and simple wait strategies; it does not include site-specific readiness checks.
+- Debug artifact capture is optional and local-only; on failure it can save best-effort screenshots and raw HTML, but it does not provide richer tracing, video capture, or guaranteed artifact completeness.
 - The site adapter abstraction supports read-only discovery/parsing only.
 - Greenhouse support includes listing-page parsing, conservative next-page traversal when standard listing pagination links are exposed, and optional detail-page enrichment using common markup conventions; application form parsing and broader live-site hardening are not implemented.
 - Lever support includes listing-page parsing, conservative next-page traversal when standard listing pagination links are exposed, and optional detail-page enrichment using common markup conventions; application form parsing and broader live-site hardening are not implemented.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 from pathlib import Path
 
@@ -40,6 +41,52 @@ def fetch_page_html(
         session.take_screenshot(name=screenshot_name, page=page)
 
     return page.content()
+
+
+def build_debug_artifact_dir(
+    *,
+    base_dir: str | Path,
+    site_name: str,
+    query_label: str,
+    timestamp: datetime | None = None,
+) -> Path:
+    """Build a structured local directory path for debug artifacts."""
+    instant = timestamp or datetime.now(timezone.utc)
+    stamp = instant.strftime("%Y%m%dT%H%M%SZ")
+    return Path(base_dir) / _normalize_path_part(site_name) / _normalize_path_part(query_label) / stamp
+
+
+def capture_debug_artifacts(
+    *,
+    session: BrowserSessionManager,
+    base_dir: str | Path,
+    site_name: str,
+    query_label: str,
+    artifact_name: str,
+    html: str | None = None,
+    timestamp: datetime | None = None,
+) -> dict[str, Path]:
+    """Best-effort local artifact capture that never masks the triggering failure."""
+    target_dir = build_debug_artifact_dir(
+        base_dir=base_dir,
+        site_name=site_name,
+        query_label=query_label,
+        timestamp=timestamp,
+    )
+    try:
+        return session.save_debug_artifacts(directory=target_dir, name=artifact_name, html=html)
+    except Exception:
+        LOGGER.exception(
+            "debug_artifact_failed",
+            extra={
+                "event": "debug_artifact_failed",
+                "site_name": site_name,
+                "query_label": query_label,
+                "artifact_name": artifact_name,
+                "target_dir": str(target_dir),
+            },
+        )
+        return {}
 
 
 def fetch_listing_page_html(
@@ -88,3 +135,8 @@ def fetch_page_html_with_screenshot(
 
     screenshot_path = session.take_screenshot(name=screenshot_name, page=page)
     return page.content(), screenshot_path
+
+
+def _normalize_path_part(value: str) -> str:
+    cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value.strip())
+    return cleaned.strip("._") or "unknown"

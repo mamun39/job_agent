@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import logging
+from pathlib import Path
 
-from job_agent.browser.fetch import fetch_listing_page_html
+from job_agent.browser.fetch import capture_debug_artifacts, fetch_listing_page_html
 from job_agent.browser.session import BrowserSessionManager
-from job_agent.config import load_max_pages_per_query
+from job_agent.config import load_max_pages_per_query, load_settings
 from job_agent.core.dedupe import deduplicate_job_postings
 from job_agent.core.models import CrawlResult, DiscoveryOptions, DiscoveryQuery, DiscoveryTelemetry, JobPosting, SearchQuery
 from job_agent.sites.greenhouse import GreenhouseAdapter
@@ -117,10 +118,21 @@ def run_discovery_query(
     screenshot_name: str | None = None,
     max_pages_per_query: int | None = None,
     options: DiscoveryOptions | None = None,
+    debug_artifacts_on_failure: bool | None = None,
+    debug_artifacts_dir: str | Path | None = None,
 ) -> CrawlResult:
     """Fetch a configured listing page, parse it with the matching adapter, and store jobs."""
     adapter = build_adapter_for_query(query)
     options = options or DiscoveryOptions()
+    settings = load_settings() if debug_artifacts_on_failure is None or debug_artifacts_dir is None else None
+    capture_failure_artifacts = (
+        debug_artifacts_on_failure
+        if debug_artifacts_on_failure is not None
+        else bool(settings and settings.debug_artifacts_on_failure)
+    )
+    artifact_dir = Path(debug_artifacts_dir) if debug_artifacts_dir is not None else (
+        settings.debug_artifacts_dir if settings is not None else Path("./data/debug_artifacts")
+    )
     telemetry = DiscoveryTelemetry(queries_attempted=1)
     if isinstance(adapter, GreenhouseAdapter):
         result = _run_greenhouse_discovery_query(
@@ -132,6 +144,8 @@ def run_discovery_query(
             max_pages_per_query=max_pages_per_query or load_max_pages_per_query(),
             enrich_details=options.enrich_greenhouse_details,
             telemetry=telemetry,
+            capture_failure_artifacts=capture_failure_artifacts,
+            artifact_dir=artifact_dir,
         )
     elif isinstance(adapter, LeverAdapter):
         result = _run_lever_discovery_query(
@@ -143,6 +157,8 @@ def run_discovery_query(
             max_pages_per_query=max_pages_per_query or load_max_pages_per_query(),
             enrich_details=options.enrich_lever_details,
             telemetry=telemetry,
+            capture_failure_artifacts=capture_failure_artifacts,
+            artifact_dir=artifact_dir,
         )
     else:
         try:
@@ -154,6 +170,14 @@ def run_discovery_query(
             telemetry.pages_fetched += 1
         except Exception:
             telemetry.pages_failed += 1
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query.label,
+                artifact_name="listing_fetch_failure",
+            )
             raise
         result = _run_discovery_with_telemetry(adapter=adapter, jobs_repo=jobs_repo, html=html, telemetry=telemetry)
         result.metadata.update({"pages_parsed": 1 if result.metadata["parsed_count"] > 0 else 0})
@@ -184,6 +208,8 @@ def _run_greenhouse_discovery_query(
     max_pages_per_query: int,
     enrich_details: bool,
     telemetry: DiscoveryTelemetry,
+    capture_failure_artifacts: bool,
+    artifact_dir: Path,
 ) -> CrawlResult:
     page_limit = max(1, max_pages_per_query)
     next_url: str | None = str(query.start_url)
@@ -208,6 +234,14 @@ def _run_greenhouse_discovery_query(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": next_url, "stage": "listing_fetch"},
             )
             telemetry.pages_failed += 1
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query.label,
+                artifact_name=f"listing_fetch_failure_page_{pages_fetched + 1}",
+            )
             if pages_fetched == 0:
                 raise
             LOGGER.warning(
@@ -226,6 +260,15 @@ def _run_greenhouse_discovery_query(
             LOGGER.exception(
                 "parse_failed",
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "listing_parse", "url": next_url},
+            )
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query.label,
+                artifact_name=f"listing_parse_failure_page_{pages_fetched}",
+                html=html,
             )
             raise
         if postings:
@@ -255,6 +298,9 @@ def _run_greenhouse_discovery_query(
             session=session,
             postings=aggregated_postings,
             telemetry=telemetry,
+            capture_failure_artifacts=capture_failure_artifacts,
+            artifact_dir=artifact_dir,
+            query_label=query.label,
         )
 
     result = _run_discovery_with_telemetry(
@@ -277,6 +323,9 @@ def _enrich_greenhouse_postings(
     session: BrowserSessionManager,
     postings: list[JobPosting],
     telemetry: DiscoveryTelemetry,
+    capture_failure_artifacts: bool,
+    artifact_dir: Path,
+    query_label: str,
 ) -> list[JobPosting]:
     enriched_postings: list[JobPosting] = []
     for posting in postings:
@@ -289,6 +338,14 @@ def _enrich_greenhouse_postings(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": posting.url.unicode_string(), "stage": "detail_fetch"},
             )
             telemetry.detail_parse_failures += 1
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query_label,
+                artifact_name=f"detail_fetch_failure_{posting.source_job_id or 'job'}",
+            )
             enriched_postings.append(posting)
             continue
         try:
@@ -300,6 +357,15 @@ def _enrich_greenhouse_postings(
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "detail_parse", "url": posting.url.unicode_string()},
             )
             telemetry.detail_parse_failures += 1
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query_label,
+                artifact_name=f"detail_parse_failure_{posting.source_job_id or 'job'}",
+                html=html,
+            )
             enriched_postings.append(posting)
     return enriched_postings
 
@@ -347,6 +413,8 @@ def _run_lever_discovery_query(
     max_pages_per_query: int,
     enrich_details: bool,
     telemetry: DiscoveryTelemetry,
+    capture_failure_artifacts: bool,
+    artifact_dir: Path,
 ) -> CrawlResult:
     page_limit = max(1, max_pages_per_query)
     next_url: str | None = str(query.start_url)
@@ -371,6 +439,14 @@ def _run_lever_discovery_query(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": next_url, "stage": "listing_fetch"},
             )
             telemetry.pages_failed += 1
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query.label,
+                artifact_name=f"listing_fetch_failure_page_{pages_fetched + 1}",
+            )
             if pages_fetched == 0:
                 raise
             LOGGER.warning(
@@ -389,6 +465,15 @@ def _run_lever_discovery_query(
             LOGGER.exception(
                 "parse_failed",
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "listing_parse", "url": next_url},
+            )
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query.label,
+                artifact_name=f"listing_parse_failure_page_{pages_fetched}",
+                html=html,
             )
             raise
         if postings:
@@ -418,6 +503,9 @@ def _run_lever_discovery_query(
             session=session,
             postings=aggregated_postings,
             telemetry=telemetry,
+            capture_failure_artifacts=capture_failure_artifacts,
+            artifact_dir=artifact_dir,
+            query_label=query.label,
         )
 
     result = _run_discovery_with_telemetry(
@@ -440,6 +528,9 @@ def _enrich_lever_postings(
     session: BrowserSessionManager,
     postings: list[JobPosting],
     telemetry: DiscoveryTelemetry,
+    capture_failure_artifacts: bool,
+    artifact_dir: Path,
+    query_label: str,
 ) -> list[JobPosting]:
     enriched_postings: list[JobPosting] = []
     for posting in postings:
@@ -452,6 +543,14 @@ def _enrich_lever_postings(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": posting.url.unicode_string(), "stage": "detail_fetch"},
             )
             telemetry.detail_parse_failures += 1
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query_label,
+                artifact_name=f"detail_fetch_failure_{posting.source_job_id or 'job'}",
+            )
             enriched_postings.append(posting)
             continue
         try:
@@ -463,5 +562,36 @@ def _enrich_lever_postings(
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "detail_parse", "url": posting.url.unicode_string()},
             )
             telemetry.detail_parse_failures += 1
+            _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query_label,
+                artifact_name=f"detail_parse_failure_{posting.source_job_id or 'job'}",
+                html=html,
+            )
             enriched_postings.append(posting)
     return enriched_postings
+
+
+def _capture_failure_artifacts(
+    *,
+    enabled: bool,
+    session: BrowserSessionManager,
+    artifact_dir: Path,
+    site_name: str,
+    query_label: str,
+    artifact_name: str,
+    html: str | None = None,
+) -> None:
+    if not enabled:
+        return
+    capture_debug_artifacts(
+        session=session,
+        base_dir=artifact_dir,
+        site_name=site_name,
+        query_label=query_label,
+        artifact_name=artifact_name,
+        html=html,
+    )

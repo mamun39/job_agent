@@ -22,8 +22,10 @@ class Settings:
     db_path: Path = Path("./data/job_agent.db")
     browser_user_data_dir: Path = Path("./data/browser")
     browser_screenshot_dir: Path = Path("./data/screenshots")
+    debug_artifacts_dir: Path = Path("./data/debug_artifacts")
     browser_headless: bool = False
     max_pages_per_query: int = 1
+    debug_artifacts_on_failure: bool = False
     discovery_queries: list[DiscoveryQuery] | None = None
 
 
@@ -55,6 +57,9 @@ def load_settings() -> Settings:
     browser_screenshot_dir = Path(
         os.getenv("JOB_AGENT_BROWSER_SCREENSHOT_DIR", data_dir / "screenshots")
     )
+    debug_artifacts_dir = Path(
+        os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_DIR", data_dir / "debug_artifacts")
+    )
     return Settings(
         env=os.getenv("JOB_AGENT_ENV", "development"),
         log_level=os.getenv("JOB_AGENT_LOG_LEVEL", "INFO").upper(),
@@ -62,8 +67,10 @@ def load_settings() -> Settings:
         db_path=db_path,
         browser_user_data_dir=browser_user_data_dir,
         browser_screenshot_dir=browser_screenshot_dir,
+        debug_artifacts_dir=debug_artifacts_dir,
         browser_headless=_parse_bool(os.getenv("JOB_AGENT_BROWSER_HEADLESS", "false")),
         max_pages_per_query=load_max_pages_per_query(),
+        debug_artifacts_on_failure=_parse_bool(os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE", "false")),
         discovery_queries=load_discovery_queries(),
     )
 

@@ -1,0 +1,37 @@
+[
+  {
+    "company_name": "Stripe",
+    "source_site": "greenhouse",
+    "board_url": "https://boards.greenhouse.io/stripe",
+    "tags": ["payments", "fintech"],
+    "location_hints": ["Canada", "Remote"]
+  },
+  {
+    "company_name": "Grafana Labs",
+    "source_site": "greenhouse",
+    "board_url": "https://boards.greenhouse.io/grafanalabs",
+    "tags": ["observability", "developer-tools"],
+    "location_hints": ["Remote", "Canada"]
+  },
+  {
+    "company_name": "Clarity AI",
+    "source_site": "greenhouse",
+    "board_url": "https://boards.greenhouse.io/clarityai",
+    "tags": ["ai", "climate", "sustainability"],
+    "location_hints": ["Remote", "Europe"]
+  },
+  {
+    "company_name": "WHOOP",
+    "source_site": "lever",
+    "board_url": "https://jobs.lever.co/whoop",
+    "tags": ["healthtech", "wearables"],
+    "location_hints": ["United States", "Remote"]
+  },
+  {
+    "company_name": "Eve",
+    "source_site": "lever",
+    "board_url": "https://jobs.lever.co/Eve",
+    "tags": ["aviation", "mobility"],
+    "location_hints": ["Remote"]
+  }
+]

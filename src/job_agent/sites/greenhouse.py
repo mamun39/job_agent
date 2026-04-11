@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from job_agent.core.models import JobPosting, ParsedJobDetail, ParsedJobListing, SiteCapabilities
+from job_agent.core.models import EmploymentType, JobPosting, ParsedJobDetail, ParsedJobListing, RemoteStatus, SiteCapabilities
 from job_agent.sites.base import JobSiteAdapter, SupportsPageContent
 
 
@@ -31,7 +31,7 @@ class GreenhouseAdapter(JobSiteAdapter):
         return SiteCapabilities(
             supports_listing_html_parse=True,
             supports_listing_page_parse=True,
-            supports_detail_html_parse=False,
+            supports_detail_html_parse=True,
             supports_detail_page_parse=False,
         )
 
@@ -109,7 +109,49 @@ class GreenhouseAdapter(JobSiteAdapter):
         html: str | None = None,
         page: SupportsPageContent | None = None,
     ) -> ParsedJobDetail:
-        raise NotImplementedError("GreenhouseAdapter does not parse detail pages in this task")
+        document = _resolve_html(html=html, page=page)
+        parser = _GreenhouseJobDetailParser(base_url=url)
+        parser.feed(document)
+        parser.close()
+
+        company_name = self._company_name or parser.company_name or _infer_company_from_board_url(self._board_url) or "Unknown company"
+        location = parser.location or "Unknown location"
+        metadata = {}
+        if parser.department:
+            metadata["team"] = parser.department
+        if parser.workplace_type:
+            metadata["workplace_type"] = parser.workplace_type
+        if parser.commitment:
+            metadata["employment_type_text"] = parser.commitment
+
+        posting = JobPosting(
+            source_site=self.site_name,
+            source_job_id=_infer_source_job_id(url),
+            url=url,
+            title=parser.title or "Unknown title",
+            company=company_name,
+            location=location,
+            remote_status=_infer_remote_status(parser.workplace_type or location),
+            employment_type=_infer_employment_type(parser.commitment),
+            description_text=parser.description_text or "Listing-only discovery from Greenhouse jobs page.",
+            metadata=metadata,
+        )
+        listing = ParsedJobListing(
+            source_site=self.site_name,
+            url=url,
+            source_job_id=posting.source_job_id,
+            title_hint=parser.title,
+            company_hint=company_name,
+            location_hint=parser.location,
+            department_hint=parser.department,
+            metadata=dict(metadata),
+        )
+        return ParsedJobDetail(
+            listing=listing,
+            posting=posting,
+            raw_html=document,
+            metadata={"detail_parsed": True},
+        )
 
 
 def _resolve_html(*, html: str | None, page: SupportsPageContent | None) -> str:
@@ -129,6 +171,41 @@ def _infer_company_from_board_url(board_url: str | None) -> str | None:
         if slug:
             return slug.replace("-", " ").replace("_", " ").title()
     return None
+
+
+def _infer_source_job_id(url: str) -> str | None:
+    path_parts = [part for part in urlsplit(url).path.split("/") if part]
+    if not path_parts:
+        return None
+    return path_parts[-1]
+
+
+def _infer_employment_type(value: str | None) -> EmploymentType:
+    normalized = (value or "").casefold()
+    if "full" in normalized:
+        return EmploymentType.FULL_TIME
+    if "part" in normalized:
+        return EmploymentType.PART_TIME
+    if "contract" in normalized:
+        return EmploymentType.CONTRACT
+    if "intern" in normalized:
+        return EmploymentType.INTERNSHIP
+    if "temp" in normalized:
+        return EmploymentType.TEMPORARY
+    if "freelance" in normalized:
+        return EmploymentType.FREELANCE
+    return EmploymentType.UNKNOWN
+
+
+def _infer_remote_status(value: str | None) -> RemoteStatus:
+    normalized = (value or "").casefold()
+    if "hybrid" in normalized:
+        return RemoteStatus.HYBRID
+    if "remote" in normalized:
+        return RemoteStatus.REMOTE
+    if normalized:
+        return RemoteStatus.ONSITE
+    return RemoteStatus.UNKNOWN
 
 
 class _GreenhouseListingsParser(HTMLParser):
@@ -317,3 +394,117 @@ class _GreenhousePaginationParser(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._capture_anchor:
             self._anchor_text.append(data)
+
+
+class _GreenhouseJobDetailParser(HTMLParser):
+    def __init__(self, *, base_url: str | None) -> None:
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.title: str | None = None
+        self.location: str | None = None
+        self.department: str | None = None
+        self.commitment: str | None = None
+        self.workplace_type: str | None = None
+        self.company_name: str | None = None
+        self.description_text = ""
+        self._capture_field: str | None = None
+        self._capture_tag: str | None = None
+        self._capture_buffer: list[str] = []
+        self._description_depth = 0
+        self._description_parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_dict = dict(attrs)
+        class_attr = attrs_dict.get("class", "") or ""
+        identifier = " ".join(filter(None, [class_attr, attrs_dict.get("id", "") or "", attrs_dict.get("data-qa", "") or ""])).casefold()
+
+        if tag in {"script", "style"}:
+            self._skip_depth += 1
+            return
+
+        if self._skip_depth:
+            return
+
+        if self._description_depth == 0 and tag in {"div", "section", "article", "main"} and any(
+            token in identifier for token in ("description", "content", "job-post", "opening", "body")
+        ):
+            self._description_depth = 1
+        elif self._description_depth > 0 and tag in {"div", "section", "article", "main", "p", "ul", "ol", "li", "br"}:
+            self._description_depth += 1
+
+        if self.title is None and tag == "h1":
+            self._start_capture("title", "h1")
+            return
+
+        if self.company_name is None and tag in {"h2", "div"} and "company" in identifier:
+            self._start_capture("company", tag)
+            return
+
+        if tag in {"div", "span", "p"} and "location" in identifier:
+            self._start_capture("location", tag)
+            return
+
+        if tag in {"div", "span", "li"} and any(token in identifier for token in ("department", "team")):
+            self._start_capture("department", tag)
+            return
+
+        if tag in {"div", "span", "li"} and any(token in identifier for token in ("commitment", "employment")):
+            self._start_capture("commitment", tag)
+            return
+
+        if tag in {"div", "span", "li"} and any(token in identifier for token in ("workplace", "remote", "location-type")):
+            self._start_capture("workplace_type", tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._skip_depth:
+            if tag in {"script", "style"}:
+                self._skip_depth -= 1
+            return
+
+        if self._capture_field is not None and self._capture_tag == tag:
+            value = " ".join(part.strip() for part in self._capture_buffer if part.strip()).strip()
+            if value:
+                if self._capture_field == "title":
+                    self.title = self.title or value
+                elif self._capture_field == "company":
+                    self.company_name = self.company_name or value
+                elif self._capture_field == "location":
+                    self.location = self.location or value
+                elif self._capture_field == "department":
+                    self.department = self.department or value
+                elif self._capture_field == "commitment":
+                    self.commitment = self.commitment or value
+                elif self._capture_field == "workplace_type":
+                    self.workplace_type = self.workplace_type or value
+            self._capture_field = None
+            self._capture_tag = None
+            self._capture_buffer = []
+
+        if self._description_depth > 0 and tag in {"div", "section", "article", "main", "p", "ul", "ol", "li", "br"}:
+            self._description_depth -= 1
+            if tag in {"p", "li", "br"}:
+                self._description_parts.append("\n")
+
+        if self._description_depth == 0 and self._description_parts:
+            self.description_text = _normalize_description_text(self._description_parts)
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._capture_field is not None:
+            self._capture_buffer.append(data)
+        if self._description_depth > 0:
+            self._description_parts.append(data)
+
+    def _start_capture(self, field: str, tag: str) -> None:
+        self._capture_field = field
+        self._capture_tag = tag
+        self._capture_buffer = []
+
+
+def _normalize_description_text(parts: list[str]) -> str:
+    raw = "".join(parts)
+    lines = [" ".join(line.split()) for line in raw.splitlines()]
+    normalized_lines = [line for line in lines if line]
+    return "\n".join(normalized_lines)

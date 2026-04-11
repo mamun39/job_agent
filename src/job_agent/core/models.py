@@ -357,3 +357,9 @@ class ParsedJobDetail(BaseModel):
     posting: JobPosting
     raw_html: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DiscoveryOptions(BaseModel):
+    """Optional deterministic discovery behavior toggles."""
+
+    enrich_greenhouse_details: bool = False

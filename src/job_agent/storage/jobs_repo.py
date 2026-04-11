@@ -81,7 +81,8 @@ class JobsRepository:
         if existing is None:
             return self.insert_job(job), True
 
-        payload = self._job_to_row(job)
+        merged = self._merge_with_existing(existing, job)
+        payload = self._job_to_row(merged)
         payload["existing_url"] = existing.url.unicode_string()
         self._connection.execute(
             """
@@ -106,7 +107,7 @@ class JobsRepository:
             payload,
         )
         self._connection.commit()
-        stored = self.fetch_by_url(job.url.unicode_string())
+        stored = self.fetch_by_url(merged.url.unicode_string())
         if stored is None:
             raise RuntimeError("upsert succeeded but job could not be reloaded")
         return stored, False
@@ -372,3 +373,46 @@ class JobsRepository:
                     and job.metadata.get("reviewed") is not True
                 ]
         return filtered
+
+    def _merge_with_existing(self, existing: JobPosting, incoming: JobPosting) -> JobPosting:
+        metadata = dict(existing.metadata)
+        metadata.update(incoming.metadata)
+
+        return incoming.model_copy(
+            update={
+                "source_job_id": incoming.source_job_id or existing.source_job_id,
+                "location": _prefer_text(incoming.location, existing.location),
+                "remote_status": _prefer_enum(incoming.remote_status, existing.remote_status, unknown_value="unknown"),
+                "employment_type": _prefer_enum(
+                    incoming.employment_type,
+                    existing.employment_type,
+                    unknown_value="unknown",
+                ),
+                "seniority": _prefer_enum(incoming.seniority, existing.seniority, unknown_value="unknown"),
+                "description_text": _prefer_description(incoming.description_text, existing.description_text),
+                "metadata": metadata,
+            }
+        )
+
+
+def _prefer_text(incoming: str, existing: str) -> str:
+    if _is_unknown_text(incoming):
+        return existing
+    return incoming
+
+
+def _prefer_enum(incoming: Any, existing: Any, *, unknown_value: str) -> Any:
+    if getattr(incoming, "value", None) == unknown_value:
+        return existing
+    return incoming
+
+
+def _prefer_description(incoming: str, existing: str) -> str:
+    if incoming.startswith("Listing-only discovery from ") and existing and not existing.startswith("Listing-only discovery from "):
+        return existing
+    return incoming
+
+
+def _is_unknown_text(value: str) -> bool:
+    normalized = value.strip().casefold()
+    return normalized in {"unknown location", "unknown company", "unknown title"}

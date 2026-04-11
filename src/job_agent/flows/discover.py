@@ -8,7 +8,7 @@ from job_agent.browser.fetch import fetch_listing_page_html
 from job_agent.browser.session import BrowserSessionManager
 from job_agent.config import load_max_pages_per_query
 from job_agent.core.dedupe import deduplicate_job_postings
-from job_agent.core.models import CrawlResult, DiscoveryQuery, JobPosting, SearchQuery
+from job_agent.core.models import CrawlResult, DiscoveryOptions, DiscoveryQuery, JobPosting, SearchQuery
 from job_agent.sites.greenhouse import GreenhouseAdapter
 from job_agent.sites.lever import LeverAdapter
 from job_agent.sites.base import JobSiteAdapter
@@ -74,9 +74,11 @@ def run_discovery_query(
     jobs_repo: JobsRepository,
     screenshot_name: str | None = None,
     max_pages_per_query: int | None = None,
+    options: DiscoveryOptions | None = None,
 ) -> CrawlResult:
     """Fetch a configured listing page, parse it with the matching adapter, and store jobs."""
     adapter = build_adapter_for_query(query)
+    options = options or DiscoveryOptions()
     if isinstance(adapter, GreenhouseAdapter):
         result = _run_greenhouse_discovery_query(
             adapter=adapter,
@@ -85,6 +87,7 @@ def run_discovery_query(
             jobs_repo=jobs_repo,
             screenshot_name=screenshot_name,
             max_pages_per_query=max_pages_per_query or load_max_pages_per_query(),
+            enrich_details=options.enrich_greenhouse_details,
         )
     elif isinstance(adapter, LeverAdapter):
         result = _run_lever_discovery_query(
@@ -132,6 +135,7 @@ def _run_greenhouse_discovery_query(
     jobs_repo: JobsRepository,
     screenshot_name: str | None,
     max_pages_per_query: int,
+    enrich_details: bool,
 ) -> CrawlResult:
     page_limit = max(1, max_pages_per_query)
     next_url: str | None = str(query.start_url)
@@ -170,6 +174,13 @@ def _run_greenhouse_discovery_query(
             break
         next_url = candidate_next_url
 
+    if enrich_details and aggregated_postings:
+        aggregated_postings = _enrich_greenhouse_postings(
+            adapter=adapter,
+            session=session,
+            postings=aggregated_postings,
+        )
+
     result = run_discovery(adapter=adapter, jobs_repo=jobs_repo, parsed_postings=aggregated_postings)
     result.metadata.update(
         {
@@ -178,6 +189,56 @@ def _run_greenhouse_discovery_query(
         }
     )
     return result
+
+
+def _enrich_greenhouse_postings(
+    *,
+    adapter: GreenhouseAdapter,
+    session: BrowserSessionManager,
+    postings: list[JobPosting],
+) -> list[JobPosting]:
+    enriched_postings: list[JobPosting] = []
+    for posting in postings:
+        try:
+            html = fetch_listing_page_html(session=session, url=posting.url.unicode_string())
+            detail = adapter.parse_job_detail(url=posting.url.unicode_string(), html=html)
+            enriched_postings.append(_merge_detail_into_listing(posting, detail.posting))
+        except Exception:
+            enriched_postings.append(posting)
+    return enriched_postings
+
+
+def _merge_detail_into_listing(listing_posting: JobPosting, detail_posting: JobPosting) -> JobPosting:
+    metadata = dict(listing_posting.metadata)
+    metadata.update(detail_posting.metadata)
+    return listing_posting.model_copy(
+        update={
+            "location": _prefer_detail_text(detail_posting.location, listing_posting.location),
+            "remote_status": _prefer_detail_enum(detail_posting.remote_status, listing_posting.remote_status),
+            "employment_type": _prefer_detail_enum(detail_posting.employment_type, listing_posting.employment_type),
+            "seniority": _prefer_detail_enum(detail_posting.seniority, listing_posting.seniority),
+            "description_text": _prefer_detail_description(detail_posting.description_text, listing_posting.description_text),
+            "metadata": metadata,
+        }
+    )
+
+
+def _prefer_detail_text(detail_value: str, listing_value: str) -> str:
+    if detail_value.strip().casefold().startswith("unknown"):
+        return listing_value
+    return detail_value
+
+
+def _prefer_detail_enum(detail_value: object, listing_value: object) -> object:
+    if getattr(detail_value, "value", None) == "unknown":
+        return listing_value
+    return detail_value
+
+
+def _prefer_detail_description(detail_value: str, listing_value: str) -> str:
+    if detail_value.startswith("Listing-only discovery from "):
+        return listing_value
+    return detail_value
 
 
 def _run_lever_discovery_query(

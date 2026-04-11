@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from datetime import UTC, datetime
 from collections.abc import Sequence
 
 from job_agent.browser.session import BrowserSessionManager
@@ -16,9 +17,11 @@ from job_agent.storage.jobs_repo import JobsRepository
 from job_agent.ui.cli import (
     apply_score_result,
     export_jobs_csv,
+    format_mark_stale_summary,
     format_review_update_result,
     format_rescore_summary,
     open_job_in_browser,
+    parse_job_status,
     parse_review_decision,
     render_job_detail,
     render_jobs_list,
@@ -73,6 +76,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_review_filters(review_rescore_parser)
     review_rescore_parser.add_argument("--limit", type=int, default=100000)
+
+    review_mark_stale_parser = review_subparsers.add_parser(
+        "mark-stale",
+        help="Mark stored jobs stale using last-seen timestamps.",
+    )
+    _add_review_filters(review_mark_stale_parser)
+    review_mark_stale_parser.add_argument("--days", type=int, required=True, help="Stale threshold in days.")
+    review_mark_stale_parser.add_argument("--limit", type=int, default=100000)
 
     review_decision_parser = review_subparsers.add_parser(
         "decision",
@@ -163,6 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 min_score=args.min_score,
                 reviewed=_parse_review_filter(args.reviewed),
                 decision=decision_filter,
+                job_status=_parse_job_status_filter(args.job_status),
                 limit=args.limit,
             )
             decisions = repo.get_review_decisions_by_url(job.url.unicode_string() for job in jobs)
@@ -216,6 +228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 min_score=args.min_score,
                 reviewed=_parse_review_filter(args.reviewed),
                 decision=decision_filter,
+                job_status=_parse_job_status_filter(args.job_status),
                 limit=args.limit,
             )
             output_path = export_jobs_csv(jobs, args.output)
@@ -225,6 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.review_command == "rescore":
             try:
                 decision_filter = _parse_review_decision_filter(args.decision)
+                job_status_filter = _parse_job_status_filter(args.job_status)
             except ValueError as exc:
                 print(str(exc))
                 return 1
@@ -232,6 +246,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source_site=args.source_site,
                 reviewed=_parse_review_filter(args.reviewed),
                 decision=decision_filter,
+                job_status=job_status_filter,
                 limit=args.limit,
             )
             rescored_count = 0
@@ -244,6 +259,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 rescored_count += 1
             print(format_rescore_summary(rescored_count=rescored_count))
+            return 0
+
+        if args.review_command == "mark-stale":
+            try:
+                decision_filter = _parse_review_decision_filter(args.decision)
+                job_status_filter = _parse_job_status_filter(args.job_status)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            try:
+                stale_count = repo.mark_stale_jobs(
+                    stale_threshold_days=args.days,
+                    source_site=args.source_site,
+                    reviewed=_parse_review_filter(args.reviewed),
+                    decision=decision_filter,
+                    job_status=job_status_filter,
+                    limit=args.limit,
+                    now=datetime.now(UTC),
+                )
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            print(format_mark_stale_summary(stale_count=stale_count, stale_threshold_days=args.days))
             return 0
 
         parser.error("review requires a subcommand")
@@ -273,6 +311,7 @@ def _add_review_filters(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source-site", help="Filter by source site.")
     parser.add_argument("--min-score", type=float, help="Filter by minimum numeric score.")
     parser.add_argument("--decision", help="Filter by explicit persisted review decision.")
+    parser.add_argument("--job-status", help="Filter by persisted job lifecycle status.")
     parser.add_argument(
         "--reviewed",
         choices=["reviewed", "unreviewed", "all"],
@@ -299,6 +338,12 @@ def _parse_review_decision_filter(value: str | None):
     if value is None:
         return None
     return parse_review_decision(value)
+
+
+def _parse_job_status_filter(value: str | None):
+    if value is None:
+        return None
+    return parse_job_status(value)
 
 
 def _format_missing_job_message(*, job_id: int | None, url: str | None) -> str:

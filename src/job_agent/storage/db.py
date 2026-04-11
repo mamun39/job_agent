@@ -19,8 +19,10 @@ SCHEMA_STATEMENTS = (
         remote_status TEXT NOT NULL,
         employment_type TEXT NOT NULL,
         seniority TEXT NOT NULL,
+        job_status TEXT NOT NULL DEFAULT 'active',
         posted_at TEXT,
         discovered_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         description_text TEXT NOT NULL,
         metadata_json TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -68,5 +70,17 @@ def init_db(db_path: str | Path) -> sqlite3.Connection:
     connection = connect_db(db_path)
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
+    _ensure_jobs_columns(connection)
     connection.commit()
     return connection
+
+
+def _ensure_jobs_columns(connection: sqlite3.Connection) -> None:
+    existing_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+    }
+    if "job_status" not in existing_columns:
+        connection.execute("ALTER TABLE jobs ADD COLUMN job_status TEXT NOT NULL DEFAULT 'active'")
+    if "last_seen_at" not in existing_columns:
+        connection.execute("ALTER TABLE jobs ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")

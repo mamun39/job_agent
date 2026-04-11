@@ -90,7 +90,7 @@ def test_review_list_can_filter_by_decision(tmp_path, monkeypatch, capsys) -> No
 
     assert exit_code == 0
     assert "Saved Job" in captured.out
-    assert "score=n/a | saved" in captured.out
+    assert "score=n/a | status=active | saved" in captured.out
     assert "Skipped Job" not in captured.out
 
 

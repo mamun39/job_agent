@@ -29,6 +29,7 @@ Last updated: 2026-04-10
 - No login automation, site navigation flows, application submission logic, or resume tailoring logic exists.
 - The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but pagination is limited to conservative Greenhouse and Lever next-page traversal, detail-page collection is only implemented as optional Greenhouse and Lever enrichment after listing discovery, and broader multi-step navigation is still not supported.
 - Discovery telemetry now tracks local per-run counters for fetch, parse, dedupe, storage, and detail-enrichment outcomes, but the top-level CLI `discover` command still prints its older compact status line instead of the richer summary renderer.
+- Job lifecycle status now tracks local `active`, `stale`, and `archived` states with timestamp-based stale marking, but archival is not confirmed against remote sites and stale detection depends entirely on local `last_seen_at` maintenance.
 - The review workflow now supports both CLI and a minimal local dashboard, but there is still no richer terminal UI, authentication layer, or collaborative multi-user workflow.
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
 - Review decisions store only the latest explicit state per posting URL; there is no decision history or audit trail.

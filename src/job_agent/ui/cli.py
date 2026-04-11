@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 import webbrowser
 
-from job_agent.core.models import CrawlResult, JobPosting, ReviewDecision, ReviewStatus, ScoreResult
+from job_agent.core.models import CrawlResult, JobPosting, JobStatus, ReviewDecision, ReviewStatus, ScoreResult
 from job_agent.llm.summarizer import JobSummarizer, summarize_job_match
 
 
@@ -25,7 +25,7 @@ def render_jobs_list(jobs: list[JobPosting], *, decisions: dict[str, ReviewDecis
         lines.append(
             f"{index}. id={job.metadata.get('db_id', 'n/a')} [{job.source_site}] "
             f"{job.title} | {job.company} | {job.location} | "
-            f"score={score if score is not None else 'n/a'} | {reviewed}"
+            f"score={score if score is not None else 'n/a'} | status={job.job_status.value} | {reviewed}"
         )
         lines.append(f"   {job.url}")
     return "\n".join(lines)
@@ -48,6 +48,7 @@ def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None
         f"Remote Status: {job.remote_status.value}",
         f"Employment Type: {job.employment_type.value}",
         f"Seniority: {job.seniority.value}",
+        f"Job Status: {job.job_status.value}",
         f"Score: {_job_score(job) if _job_score(job) is not None else 'n/a'}",
         f"Reviewed: {'yes' if decision is not None or _job_reviewed(job) else 'no'}",
         f"Decision: {decision.decision.value if decision is not None else 'n/a'}",
@@ -165,6 +166,11 @@ def format_rescore_summary(*, rescored_count: int) -> str:
     return f"Rescored {rescored_count} jobs."
 
 
+def format_mark_stale_summary(*, stale_count: int, stale_threshold_days: int) -> str:
+    """Render a concise CLI summary for stale-job maintenance."""
+    return f"Marked {stale_count} jobs stale using threshold={stale_threshold_days} days."
+
+
 def apply_score_result(job: JobPosting, score_result: ScoreResult) -> JobPosting:
     """Return a job copy with refreshed score metadata applied."""
     metadata = dict(job.metadata)
@@ -181,6 +187,16 @@ def parse_review_decision(value: str) -> ReviewStatus:
     except ValueError as exc:
         supported = ", ".join(ReviewStatus.choices())
         raise ValueError(f"Invalid review decision '{value}'. Supported decisions: {supported}") from exc
+
+
+def parse_job_status(value: str) -> JobStatus:
+    """Parse a CLI job lifecycle status value."""
+    normalized = value.strip().lower()
+    try:
+        return JobStatus(normalized)
+    except ValueError as exc:
+        supported = ", ".join(JobStatus.choices())
+        raise ValueError(f"Invalid job status '{value}'. Supported statuses: {supported}") from exc
 
 
 def resolve_open_job_url(

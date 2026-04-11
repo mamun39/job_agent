@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 import sqlite3
 from typing import Any
 
-from job_agent.core.models import JobPosting, ReviewDecision, ReviewStatus
+from job_agent.core.models import JobPosting, JobStatus, ReviewDecision, ReviewStatus
 
 
 class JobsRepository:
@@ -18,10 +18,11 @@ class JobsRepository:
 
     def initialize_schema(self) -> None:
         """Ensure the jobs table exists for the current connection."""
-        from job_agent.storage.db import SCHEMA_STATEMENTS
+        from job_agent.storage.db import SCHEMA_STATEMENTS, _ensure_jobs_columns
 
         for statement in SCHEMA_STATEMENTS:
             self._connection.execute(statement)
+        _ensure_jobs_columns(self._connection)
         self._connection.commit()
 
     def insert_job(self, job: JobPosting) -> JobPosting:
@@ -39,8 +40,10 @@ class JobsRepository:
                 remote_status,
                 employment_type,
                 seniority,
+                job_status,
                 posted_at,
                 discovered_at,
+                last_seen_at,
                 description_text,
                 metadata_json
             ) VALUES (
@@ -53,8 +56,10 @@ class JobsRepository:
                 :remote_status,
                 :employment_type,
                 :seniority,
+                :job_status,
                 :posted_at,
                 :discovered_at,
+                :last_seen_at,
                 :description_text,
                 :metadata_json
             )
@@ -97,8 +102,10 @@ class JobsRepository:
                 remote_status = :remote_status,
                 employment_type = :employment_type,
                 seniority = :seniority,
+                job_status = :job_status,
                 posted_at = :posted_at,
                 discovered_at = :discovered_at,
+                last_seen_at = :last_seen_at,
                 description_text = :description_text,
                 metadata_json = :metadata_json,
                 updated_at = CURRENT_TIMESTAMP
@@ -146,6 +153,7 @@ class JobsRepository:
         min_score: float | None = None,
         reviewed: bool | None = None,
         decision: ReviewStatus | str | None = None,
+        job_status: JobStatus | str | None = None,
         company: str | None = None,
         remote_status: str | None = None,
         employment_type: str | None = None,
@@ -164,6 +172,10 @@ class JobsRepository:
         if company is not None:
             clauses.append("company = ?")
             params.append(company)
+        if job_status is not None:
+            normalized_status = job_status if isinstance(job_status, JobStatus) else JobStatus(job_status)
+            clauses.append("job_status = ?")
+            params.append(normalized_status.value)
         if remote_status is not None:
             clauses.append("remote_status = ?")
             params.append(remote_status)
@@ -320,6 +332,58 @@ class JobsRepository:
             raise RuntimeError("score update succeeded but job could not be reloaded")
         return stored
 
+    def update_job_status(self, *, posting_url: str, job_status: JobStatus | str) -> JobPosting:
+        """Persist a refreshed job lifecycle status for one stored job."""
+        normalized_status = job_status if isinstance(job_status, JobStatus) else JobStatus(job_status)
+        self._connection.execute(
+            """
+            UPDATE jobs
+            SET
+                job_status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE url = ?
+            """,
+            (normalized_status.value, posting_url),
+        )
+        self._connection.commit()
+        stored = self.fetch_by_url(posting_url)
+        if stored is None:
+            raise RuntimeError("job status update succeeded but job could not be reloaded")
+        return stored
+
+    def mark_stale_jobs(
+        self,
+        *,
+        stale_threshold_days: int,
+        source_site: str | None = None,
+        reviewed: bool | None = None,
+        decision: ReviewStatus | str | None = None,
+        job_status: JobStatus | str | None = None,
+        now: datetime | None = None,
+        limit: int = 100000,
+    ) -> int:
+        """Mark active jobs stale when they have not been seen within the threshold."""
+        if stale_threshold_days < 1:
+            raise ValueError("stale_threshold_days must be at least 1")
+
+        active_status = JobStatus.ACTIVE
+        candidates = self.list_jobs(
+            source_site=source_site,
+            reviewed=reviewed,
+            decision=decision,
+            job_status=job_status or active_status,
+            limit=limit,
+        )
+        threshold = (now or datetime.now(UTC)) - timedelta(days=stale_threshold_days)
+        updated_count = 0
+        for job in candidates:
+            if job.job_status is JobStatus.ARCHIVED:
+                continue
+            if job.last_seen_at < threshold:
+                self.update_job_status(posting_url=job.url.unicode_string(), job_status=JobStatus.STALE)
+                updated_count += 1
+        return updated_count
+
     def _job_to_row(self, job: JobPosting) -> dict[str, Any]:
         return {
             "source_site": job.source_site,
@@ -331,8 +395,10 @@ class JobsRepository:
             "remote_status": job.remote_status.value,
             "employment_type": job.employment_type.value,
             "seniority": job.seniority.value,
+            "job_status": job.job_status.value,
             "posted_at": self._serialize_datetime(job.posted_at),
             "discovered_at": self._serialize_datetime(job.discovered_at),
+            "last_seen_at": self._serialize_datetime(job.last_seen_at),
             "description_text": job.description_text,
             "metadata_json": json.dumps(job.metadata, ensure_ascii=True, sort_keys=True),
         }
@@ -351,8 +417,10 @@ class JobsRepository:
                 "remote_status": row["remote_status"],
                 "employment_type": row["employment_type"],
                 "seniority": row["seniority"],
+                "job_status": row["job_status"],
                 "posted_at": self._parse_datetime(row["posted_at"]),
                 "discovered_at": self._parse_datetime(row["discovered_at"]),
+                "last_seen_at": self._parse_datetime(row["last_seen_at"]),
                 "description_text": row["description_text"],
                 "metadata": metadata,
             }
@@ -422,6 +490,8 @@ class JobsRepository:
                     unknown_value="unknown",
                 ),
                 "seniority": _prefer_enum(incoming.seniority, existing.seniority, unknown_value="unknown"),
+                "job_status": JobStatus.ACTIVE,
+                "last_seen_at": incoming.last_seen_at if incoming.last_seen_at >= existing.last_seen_at else existing.last_seen_at,
                 "description_text": _prefer_description(incoming.description_text, existing.description_text),
                 "metadata": metadata,
             }

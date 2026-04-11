@@ -52,6 +52,17 @@ class ReviewStatus(StrEnum):
         return tuple(status.value for status in cls)
 
 
+class JobStatus(StrEnum):
+    ACTIVE = "active"
+    STALE = "stale"
+    ARCHIVED = "archived"
+
+    @classmethod
+    def choices(cls) -> tuple[str, ...]:
+        """Return supported persisted job status values."""
+        return tuple(status.value for status in cls)
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -77,10 +88,15 @@ class JobPosting(BaseModel):
     remote_status: RemoteStatus = RemoteStatus.UNKNOWN
     employment_type: EmploymentType = EmploymentType.UNKNOWN
     seniority: SeniorityLevel = SeniorityLevel.UNKNOWN
+    job_status: JobStatus = JobStatus.ACTIVE
     posted_at: datetime | None = Field(default=None, description="When the job was originally posted.")
     discovered_at: datetime = Field(
         default_factory=_utc_now,
         description="When job-agent discovered this posting.",
+    )
+    last_seen_at: datetime = Field(
+        default_factory=_utc_now,
+        description="When job-agent most recently observed this posting in discovery.",
     )
     description_text: str
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -119,6 +135,8 @@ class JobPosting(BaseModel):
     def _validate_dates(self) -> JobPosting:
         if self.posted_at and self.posted_at > self.discovered_at:
             raise ValueError("posted_at cannot be later than discovered_at")
+        if self.last_seen_at < self.discovered_at:
+            raise ValueError("last_seen_at cannot be earlier than discovered_at")
         return self
 
     @property

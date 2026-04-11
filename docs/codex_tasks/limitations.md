@@ -12,6 +12,7 @@ Last updated: 2026-04-10
 - URL deduplication is conservative and generic; it does not include site-specific canonicalization rules.
 - Fallback deduplication uses exact normalized `title + company + location` comparison only and does not do fuzzy matching.
 - Relevance scoring uses fixed in-code weights and substring matching rather than externalized rules or semantic matching; stored scores can now be refreshed from the CLI, but the current default scoring criteria are effectively neutral unless code-defined include/exclude/preference rules are added, and score history is not retained separately from each job's current metadata.
+- A deterministic hard-filter stage can now reject jobs that clearly violate explicit parsed intent constraints, but it remains limited to simple verifiable fields such as keyword, company, location, source-site, remote-status, and freshness checks; unknown or weakly structured data is handled conservatively and deeper semantic matching is still out of scope.
 - Browser session tests validate wrapper behavior with fakes rather than launching a real browser end to end.
 - Playwright browser installation is environment-local and must be installed on each machine separately.
 - The Playwright fetch helper is generic and only supports URL navigation, page HTML capture, optional screenshots, and simple wait strategies; it does not include site-specific readiness checks.

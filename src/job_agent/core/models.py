@@ -452,6 +452,26 @@ class MatchExplanation(BaseModel):
         return _normalize_string_list(value)
 
 
+class HardFilterResult(BaseModel):
+    """Deterministic hard-filter evaluation result for one job against one intent."""
+
+    passed: bool
+    rejection_reasons: list[str] = Field(default_factory=list)
+
+    @field_validator("rejection_reasons", mode="before")
+    @classmethod
+    def _normalize_rejection_reasons(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+    @model_validator(mode="after")
+    def _validate_rejection_consistency(self) -> HardFilterResult:
+        if self.passed and self.rejection_reasons:
+            raise ValueError("rejection_reasons must be empty when passed is true")
+        if not self.passed and not self.rejection_reasons:
+            raise ValueError("rejection_reasons are required when passed is false")
+        return self
+
+
 class CrawlResult(BaseModel):
     """Result of a crawl or fetch attempt."""
 

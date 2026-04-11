@@ -40,7 +40,7 @@ def test_review_rescore_updates_stored_scores_and_explanations(tmp_path, monkeyp
     monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
     monkeypatch.setattr(
         "job_agent.main.rescore_job_posting",
-        lambda job: type("Result", (), {"score": 42, "explanations": ["new explanation"]})(),
+        lambda job, criteria=None: type("Result", (), {"score": 42, "explanations": ["new explanation"]})(),
     )
 
     exit_code = main(["review", "rescore"])
@@ -77,7 +77,7 @@ def test_review_rescore_honors_filters(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
     monkeypatch.setattr(
         "job_agent.main.rescore_job_posting",
-        lambda job: type("Result", (), {"score": 77, "explanations": [f"rescored {job.source_site}"]})(),
+        lambda job, criteria=None: type("Result", (), {"score": 77, "explanations": [f"rescored {job.source_site}"]})(),
     )
 
     exit_code = main(["review", "rescore", "--source-site", "greenhouse", "--reviewed", "reviewed", "--decision", "saved"])
@@ -108,7 +108,7 @@ def test_review_rescore_reflects_current_rule_changes(tmp_path, monkeypatch, cap
             type("Result", (), {"score": 25, "explanations": ["rule set two"]})(),
         ]
     )
-    monkeypatch.setattr("job_agent.main.rescore_job_posting", lambda job: next(first_scores))
+    monkeypatch.setattr("job_agent.main.rescore_job_posting", lambda job, criteria=None: next(first_scores))
 
     first_exit_code = main(["review", "rescore"])
     first_job = repo.fetch_by_url("https://example.com/jobs/1")
@@ -123,3 +123,33 @@ def test_review_rescore_reflects_current_rule_changes(tmp_path, monkeypatch, cap
     assert first_job.metadata["score"] == 10
     assert second_job.metadata["score"] == 25
     assert second_job.metadata["score_explanations"] == ["rule set two"]
+
+
+def test_review_rescore_uses_active_configured_scoring_rules(tmp_path, monkeypatch, capsys) -> None:
+    from job_agent.core.models import ScoringRuleSet
+
+    db_path = tmp_path / "rescore.db"
+    repo = JobsRepository(init_db(db_path))
+    _insert_job(repo, url="https://example.com/jobs/1", source_site="greenhouse", title="Senior Python Engineer")
+    settings = Settings(
+        db_path=db_path,
+        scoring_rules=ScoringRuleSet(
+            include_keywords=["python"],
+            preferred_companies=["Example Co"],
+            preferred_remote_statuses=["remote"],
+        ),
+    )
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: settings)
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+
+    exit_code = main(["review", "rescore"])
+    captured = capsys.readouterr()
+    stored = repo.fetch_by_url("https://example.com/jobs/1")
+
+    assert exit_code == 0
+    assert "Rescored 1 jobs." in captured.out
+    assert stored is not None
+    assert stored.metadata["score"] > 0
+    explanations = stored.metadata["score_explanations"]
+    assert any("title matched include keyword 'python'" in item for item in explanations)
+    assert any("company matched include keyword 'example co'" in item for item in explanations)

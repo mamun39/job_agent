@@ -23,7 +23,7 @@ from job_agent.core.models import CrawlResult, DiscoveryOptions, MatchedJobMatch
 from job_agent.flows.discover import run_discovery_query
 from job_agent.flows.prompt_search import run_prompt_search
 from job_agent.logging import configure_logging
-from job_agent.core.scoring import rescore_job_posting
+from job_agent.core.scoring import build_scoring_criteria_from_rules, rescore_job_posting
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
 from job_agent.ui.cli import (
@@ -178,7 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     review_rescore_parser = review_subparsers.add_parser(
         "rescore",
-        help="Recalculate stored scores using current deterministic rules.",
+        help="Recalculate stored scores using active deterministic scoring rules from config or built-in defaults.",
     )
     _add_review_filters(review_rescore_parser)
     review_rescore_parser.add_argument("--limit", type=int, default=100000)
@@ -540,8 +540,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 limit=args.limit,
             )
             rescored_count = 0
+            active_criteria = build_scoring_criteria_from_rules(settings.scoring_rules)
             for job in jobs:
-                refreshed = apply_score_result(job, rescore_job_posting(job))
+                refreshed = apply_score_result(job, rescore_job_posting(job, criteria=active_criteria))
                 repo.update_job_score(
                     posting_url=job.url.unicode_string(),
                     score=int(refreshed.metadata["score"]),

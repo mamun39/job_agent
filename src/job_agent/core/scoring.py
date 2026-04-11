@@ -8,6 +8,7 @@ from job_agent.core.models import (
     RemoteStatus,
     ScoreResult,
     ScoringCriteria,
+    ScoringRuleSet,
     SearchConstraint,
 )
 
@@ -23,7 +24,26 @@ NON_PREFERRED_SENIORITY_PENALTY = -6
 
 def build_default_scoring_criteria() -> ScoringCriteria:
     """Return the current default deterministic scoring rules."""
-    return ScoringCriteria()
+    return build_scoring_criteria_from_rules(ScoringRuleSet.default_rules())
+
+
+def build_scoring_criteria_from_rules(rules: ScoringRuleSet) -> ScoringCriteria:
+    """Convert local configurable scoring rules into deterministic scoring criteria."""
+    keyword_rules = _dedupe_casefolded(list(rules.include_keywords))
+    exclude_keyword_rules = _dedupe_casefolded(list(rules.exclude_keywords))
+    return ScoringCriteria(
+        include_title_keywords=keyword_rules,
+        exclude_title_keywords=exclude_keyword_rules,
+        include_company_keywords=_dedupe_casefolded(list(rules.preferred_companies)),
+        exclude_company_keywords=_dedupe_casefolded(list(rules.discouraged_companies)),
+        include_location_keywords=_dedupe_casefolded(list(rules.preferred_locations)),
+        exclude_location_keywords=_dedupe_casefolded(list(rules.discouraged_locations)),
+        include_description_keywords=keyword_rules,
+        exclude_description_keywords=exclude_keyword_rules,
+        preferred_remote_statuses=list(rules.preferred_remote_statuses),
+        preferred_employment_types=list(rules.preferred_employment_types),
+        preferred_seniority_levels=list(rules.preferred_seniority_levels),
+    )
 
 
 def rescore_job_posting(job: JobPosting, criteria: ScoringCriteria | None = None) -> ScoreResult:
@@ -44,6 +64,7 @@ def build_scoring_criteria_from_constraints(constraints: SearchConstraint) -> Sc
         include_title_keywords=_dedupe_casefolded(
             list(constraints.include_keywords) + list(constraints.target_titles)
         ),
+        include_description_keywords=_dedupe_casefolded(list(constraints.include_keywords)),
         include_company_keywords=_dedupe_casefolded(list(constraints.include_companies)),
         exclude_company_keywords=_dedupe_casefolded(list(constraints.exclude_companies)),
         include_location_keywords=_dedupe_casefolded(list(constraints.location_constraints)),
@@ -76,6 +97,13 @@ def score_job_posting(job: JobPosting, criteria: ScoringCriteria) -> ScoreResult
         field_value=job.location,
         include_keywords=criteria.include_location_keywords,
         exclude_keywords=criteria.exclude_location_keywords,
+        explanations=explanations,
+    )
+    score += _apply_keyword_rules(
+        field_name="description",
+        field_value=job.description_text,
+        include_keywords=criteria.include_description_keywords,
+        exclude_keywords=criteria.exclude_description_keywords,
         explanations=explanations,
     )
     score += _apply_preference_rule(

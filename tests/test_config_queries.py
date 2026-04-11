@@ -4,7 +4,14 @@ import json
 
 import pytest
 
-from job_agent.config import load_board_registry, load_browser_auth_mode, load_discovery_options, load_discovery_queries, load_settings
+from job_agent.config import (
+    load_board_registry,
+    load_browser_auth_mode,
+    load_discovery_options,
+    load_discovery_queries,
+    load_scoring_rules,
+    load_settings,
+)
 
 
 def test_load_discovery_queries_from_env_json(monkeypatch) -> None:
@@ -182,3 +189,60 @@ def test_load_discovery_options_reads_selective_detail_enrichment_settings(monke
     assert options.enrich_greenhouse_details is True
     assert options.selective_detail_enrichment is True
     assert options.min_listing_stage_score_for_detail_enrichment == 3
+
+
+def test_load_scoring_rules_from_env_json(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "JOB_AGENT_SCORING_RULES",
+        json.dumps(
+            {
+                "include_keywords": ["python", "backend"],
+                "exclude_keywords": ["sales"],
+                "preferred_companies": ["Example Co"],
+                "preferred_locations": ["Canada"],
+                "preferred_remote_statuses": ["remote"],
+                "preferred_seniority_levels": ["senior"],
+            }
+        ),
+    )
+    monkeypatch.delenv("JOB_AGENT_SCORING_RULES_FILE", raising=False)
+
+    rules = load_scoring_rules()
+
+    assert rules.include_keywords == ["python", "backend"]
+    assert rules.exclude_keywords == ["sales"]
+    assert rules.preferred_companies == ["Example Co"]
+    assert rules.preferred_locations == ["Canada"]
+    assert [item.value for item in rules.preferred_remote_statuses] == ["remote"]
+
+
+def test_load_scoring_rules_uses_default_when_unconfigured(monkeypatch) -> None:
+    monkeypatch.delenv("JOB_AGENT_SCORING_RULES", raising=False)
+    monkeypatch.delenv("JOB_AGENT_SCORING_RULES_FILE", raising=False)
+
+    rules = load_scoring_rules()
+
+    assert "engineer" in [item.casefold() for item in rules.include_keywords]
+    assert [item.value for item in rules.preferred_remote_statuses] == ["remote", "hybrid"]
+
+
+def test_load_scoring_rules_from_json_file(tmp_path, monkeypatch) -> None:
+    rules_path = tmp_path / "scoring_rules.json"
+    rules_path.write_text(
+        json.dumps(
+            {
+                "include_keywords": ["backend"],
+                "discouraged_companies": ["Bad Co"],
+                "preferred_locations": ["Canada"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JOB_AGENT_SCORING_RULES_FILE", str(rules_path))
+    monkeypatch.delenv("JOB_AGENT_SCORING_RULES", raising=False)
+
+    rules = load_scoring_rules()
+
+    assert rules.include_keywords == ["backend"]
+    assert rules.discouraged_companies == ["Bad Co"]
+    assert rules.preferred_locations == ["Canada"]

@@ -599,6 +599,8 @@ class ScoringCriteria(BaseModel):
     exclude_company_keywords: list[str] = Field(default_factory=list)
     include_location_keywords: list[str] = Field(default_factory=list)
     exclude_location_keywords: list[str] = Field(default_factory=list)
+    include_description_keywords: list[str] = Field(default_factory=list)
+    exclude_description_keywords: list[str] = Field(default_factory=list)
     preferred_remote_statuses: list[RemoteStatus] = Field(default_factory=list)
     preferred_employment_types: list[EmploymentType] = Field(default_factory=list)
     preferred_seniority_levels: list[SeniorityLevel] = Field(default_factory=list)
@@ -610,11 +612,57 @@ class ScoringCriteria(BaseModel):
         "exclude_company_keywords",
         "include_location_keywords",
         "exclude_location_keywords",
+        "include_description_keywords",
+        "exclude_description_keywords",
         mode="before",
     )
     @classmethod
     def _normalize_keyword_list(cls, value: Any) -> list[str]:
         return _normalize_string_list(value, casefold=True)
+
+
+class ScoringRuleSet(BaseModel):
+    """Local configurable scoring rules that map onto deterministic scoring criteria."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    include_keywords: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
+    preferred_companies: list[str] = Field(default_factory=list)
+    discouraged_companies: list[str] = Field(default_factory=list)
+    preferred_locations: list[str] = Field(default_factory=list)
+    discouraged_locations: list[str] = Field(default_factory=list)
+    preferred_seniority_levels: list[SeniorityLevel] = Field(default_factory=list)
+    preferred_remote_statuses: list[RemoteStatus] = Field(default_factory=list)
+    preferred_employment_types: list[EmploymentType] = Field(default_factory=list)
+
+    @field_validator(
+        "include_keywords",
+        "exclude_keywords",
+        "preferred_companies",
+        "discouraged_companies",
+        "preferred_locations",
+        "discouraged_locations",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_scoring_rule_lists(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+    @classmethod
+    def default_rules(cls) -> "ScoringRuleSet":
+        """Return transparent local default scoring rules."""
+        return cls(
+            include_keywords=["engineer", "developer", "backend", "platform", "python", "security"],
+            exclude_keywords=["sales", "recruiter", "account executive"],
+            preferred_remote_statuses=[RemoteStatus.REMOTE, RemoteStatus.HYBRID],
+            preferred_seniority_levels=[
+                SeniorityLevel.SENIOR,
+                SeniorityLevel.STAFF,
+                SeniorityLevel.PRINCIPAL,
+                SeniorityLevel.LEAD,
+            ],
+        )
 
 
 class ScoreResult(BaseModel):

@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from job_agent.core.board_registry import load_board_registry_payload
-from job_agent.core.models import BoardRegistryEntry, DiscoveryOptions, DiscoveryQuery
+from job_agent.core.models import BoardRegistryEntry, DiscoveryOptions, DiscoveryQuery, ScoringRuleSet
 
 @dataclass(slots=True)
 class Settings:
@@ -31,6 +31,7 @@ class Settings:
     max_pages_per_query: int = 1
     debug_artifacts_on_failure: bool = False
     discovery_options: DiscoveryOptions = field(default_factory=DiscoveryOptions)
+    scoring_rules: ScoringRuleSet = field(default_factory=ScoringRuleSet.default_rules)
     board_registry_file: Path | None = None
     board_registry: list[BoardRegistryEntry] = field(default_factory=list)
     discovery_queries: list[DiscoveryQuery] | None = None
@@ -85,6 +86,7 @@ def load_settings() -> Settings:
         max_pages_per_query=load_max_pages_per_query(),
         debug_artifacts_on_failure=_parse_bool(os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE", "false")),
         discovery_options=load_discovery_options(),
+        scoring_rules=load_scoring_rules(),
         board_registry_file=_load_optional_path("JOB_AGENT_BOARD_REGISTRY_FILE"),
         board_registry=load_board_registry(),
         discovery_queries=load_discovery_queries(),
@@ -194,6 +196,29 @@ def load_board_registry() -> list[BoardRegistryEntry]:
         return []
 
     return load_board_registry_payload(payload)
+
+
+def load_scoring_rules() -> ScoringRuleSet:
+    """Load local deterministic scoring rules from a file path or JSON environment variable."""
+    file_path = os.getenv("JOB_AGENT_SCORING_RULES_FILE")
+    raw_json = os.getenv("JOB_AGENT_SCORING_RULES")
+
+    if file_path:
+        payload = _load_payload_from_file(Path(file_path), config_kind="Scoring rules")
+    elif raw_json:
+        try:
+            payload = json.loads(raw_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JOB_AGENT_SCORING_RULES JSON: {exc.msg}") from exc
+    else:
+        return ScoringRuleSet.default_rules()
+
+    if not isinstance(payload, dict):
+        raise ValueError("Scoring rules config must be an object")
+    try:
+        return ScoringRuleSet.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(f"Invalid scoring rules config: {exc}") from exc
 
 
 def _load_payload_from_file(path: Path, *, config_kind: str) -> Any:

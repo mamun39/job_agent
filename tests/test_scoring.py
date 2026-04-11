@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from job_agent.core.models import EmploymentType, JobPosting, RemoteStatus, ScoringCriteria, SeniorityLevel
-from job_agent.core.scoring import score_job_posting
+from job_agent.core.models import EmploymentType, JobPosting, RemoteStatus, ScoringCriteria, ScoringRuleSet, SeniorityLevel
+from job_agent.core.scoring import build_default_scoring_criteria, build_scoring_criteria_from_rules, score_job_posting
 
 
 def _make_job(
@@ -110,3 +110,61 @@ def test_scoring_explanations_track_each_score_change() -> None:
         "+15 title matched include keyword 'python'",
         "+12 remote_status matched preferred value 'remote'",
     ]
+
+
+def test_build_scoring_criteria_from_rules_maps_configured_categories_predictably() -> None:
+    rules = ScoringRuleSet(
+        include_keywords=["Python", "platform"],
+        exclude_keywords=["sales"],
+        preferred_companies=["Example Co"],
+        discouraged_companies=["Bad Co"],
+        preferred_locations=["Canada"],
+        discouraged_locations=["Onsite"],
+        preferred_remote_statuses=[RemoteStatus.REMOTE],
+        preferred_seniority_levels=[SeniorityLevel.SENIOR],
+    )
+
+    criteria = build_scoring_criteria_from_rules(rules)
+
+    assert criteria.include_title_keywords == ["python", "platform"]
+    assert criteria.include_description_keywords == ["python", "platform"]
+    assert criteria.exclude_description_keywords == ["sales"]
+    assert criteria.include_company_keywords == ["example co"]
+    assert criteria.exclude_company_keywords == ["bad co"]
+    assert criteria.include_location_keywords == ["canada"]
+    assert criteria.exclude_location_keywords == ["onsite"]
+
+
+def test_default_scoring_criteria_is_safe_and_non_empty() -> None:
+    criteria = build_default_scoring_criteria()
+
+    assert "engineer" in criteria.include_title_keywords
+    assert "engineer" in criteria.include_description_keywords
+    assert criteria.preferred_remote_statuses == [RemoteStatus.REMOTE, RemoteStatus.HYBRID]
+
+
+def test_configured_rule_set_changes_score_and_explanations_predictably() -> None:
+    job = _make_job(
+        title="Staff Platform Engineer",
+        company="Example Co",
+        location="Hybrid - Canada",
+        remote_status="hybrid",
+        seniority="staff",
+    )
+    rules = ScoringRuleSet(
+        include_keywords=["platform"],
+        preferred_companies=["Example Co"],
+        preferred_locations=["Canada"],
+        preferred_remote_statuses=[RemoteStatus.HYBRID],
+        preferred_seniority_levels=[SeniorityLevel.STAFF],
+    )
+
+    result = score_job_posting(job, build_scoring_criteria_from_rules(rules))
+
+    assert result.score == 80
+    assert "+15 title matched include keyword 'platform'" in result.explanations
+    assert "+15 description matched include keyword 'platform'" in result.explanations
+    assert "+15 company matched include keyword 'example co'" in result.explanations
+    assert "+15 location matched include keyword 'canada'" in result.explanations
+    assert "+12 remote_status matched preferred value 'hybrid'" in result.explanations
+    assert "+8 seniority matched preferred value 'staff'" in result.explanations

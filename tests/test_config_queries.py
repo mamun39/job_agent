@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from job_agent.config import load_discovery_queries, load_settings
+from job_agent.config import load_board_registry, load_discovery_queries, load_settings
 
 
 def test_load_discovery_queries_from_env_json(monkeypatch) -> None:
@@ -92,3 +92,55 @@ def test_missing_query_file_fails_clearly(monkeypatch, tmp_path) -> None:
         load_discovery_queries()
 
     assert "does not exist" in str(exc_info.value)
+
+
+def test_load_board_registry_from_json_file(tmp_path, monkeypatch) -> None:
+    config_path = tmp_path / "boards.json"
+    config_path.write_text(
+        json.dumps(
+            [
+                {
+                    "company_name": "Example Co",
+                    "source_site": "greenhouse",
+                    "board_url": "https://boards.greenhouse.io/exampleco",
+                    "tags": ["python", "backend"],
+                    "location_hints": ["Canada"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JOB_AGENT_BOARD_REGISTRY_FILE", str(config_path))
+    monkeypatch.delenv("JOB_AGENT_BOARD_REGISTRY", raising=False)
+
+    registry = load_board_registry()
+
+    assert len(registry) == 1
+    assert registry[0].company_name == "Example Co"
+    assert registry[0].source_site == "greenhouse"
+    assert str(registry[0].board_url) == "https://boards.greenhouse.io/exampleco"
+
+
+def test_load_board_registry_from_yaml_file(tmp_path, monkeypatch) -> None:
+    pytest.importorskip("yaml")
+    config_path = tmp_path / "boards.yaml"
+    config_path.write_text(
+        """
+- company_name: Example Co
+  source_site: lever
+  board_url: https://jobs.lever.co/exampleco
+  tags:
+    - design
+  location_hints:
+    - Remote
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JOB_AGENT_BOARD_REGISTRY_FILE", str(config_path))
+    monkeypatch.delenv("JOB_AGENT_BOARD_REGISTRY", raising=False)
+
+    registry = load_board_registry()
+
+    assert len(registry) == 1
+    assert registry[0].source_site == "lever"
+    assert registry[0].location_hints == ["Remote"]

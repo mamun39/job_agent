@@ -10,7 +10,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from job_agent.core.models import DiscoveryOptions, DiscoveryQuery
+from job_agent.core.board_registry import load_board_registry_payload
+from job_agent.core.models import BoardRegistryEntry, DiscoveryOptions, DiscoveryQuery
 
 @dataclass(slots=True)
 class Settings:
@@ -27,6 +28,7 @@ class Settings:
     max_pages_per_query: int = 1
     debug_artifacts_on_failure: bool = False
     discovery_options: DiscoveryOptions = field(default_factory=DiscoveryOptions)
+    board_registry: list[BoardRegistryEntry] = field(default_factory=list)
     discovery_queries: list[DiscoveryQuery] | None = None
 
 
@@ -73,6 +75,7 @@ def load_settings() -> Settings:
         max_pages_per_query=load_max_pages_per_query(),
         debug_artifacts_on_failure=_parse_bool(os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE", "false")),
         discovery_options=load_discovery_options(),
+        board_registry=load_board_registry(),
         discovery_queries=load_discovery_queries(),
     )
 
@@ -116,7 +119,7 @@ def load_discovery_queries() -> list[DiscoveryQuery]:
     raw_json = os.getenv("JOB_AGENT_DISCOVERY_QUERIES")
 
     if file_path:
-        payload = _load_query_payload_from_file(Path(file_path))
+        payload = _load_payload_from_file(Path(file_path), config_kind="Discovery query")
     elif raw_json:
         try:
             payload = json.loads(raw_json)
@@ -132,11 +135,27 @@ def load_discovery_queries() -> list[DiscoveryQuery]:
         return [DiscoveryQuery.model_validate(item) for item in payload]
     except ValidationError as exc:
         raise ValueError(f"Invalid discovery query config: {exc}") from exc
+def load_board_registry() -> list[BoardRegistryEntry]:
+    """Load local board registry config from a file path or JSON environment variable."""
+    file_path = os.getenv("JOB_AGENT_BOARD_REGISTRY_FILE")
+    raw_json = os.getenv("JOB_AGENT_BOARD_REGISTRY")
+
+    if file_path:
+        payload = _load_payload_from_file(Path(file_path), config_kind="Board registry")
+    elif raw_json:
+        try:
+            payload = json.loads(raw_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JOB_AGENT_BOARD_REGISTRY JSON: {exc.msg}") from exc
+    else:
+        return []
+
+    return load_board_registry_payload(payload)
 
 
-def _load_query_payload_from_file(path: Path) -> Any:
+def _load_payload_from_file(path: Path, *, config_kind: str) -> Any:
     if not path.is_file():
-        raise ValueError(f"Discovery query config file does not exist: {path}")
+        raise ValueError(f"{config_kind} config file does not exist: {path}")
 
     suffix = path.suffix.lower()
     text = path.read_text(encoding="utf-8")
@@ -145,20 +164,20 @@ def _load_query_payload_from_file(path: Path) -> Any:
         try:
             return json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid discovery query JSON file: {exc.msg}") from exc
+            raise ValueError(f"Invalid {config_kind.lower()} JSON file: {exc.msg}") from exc
 
     if suffix in {".yaml", ".yml"}:
         try:
             import yaml
         except ImportError as exc:
             raise ValueError(
-                "YAML query config requires PyYAML to be installed, or use JSON instead"
+                f"YAML {config_kind.lower()} config requires PyYAML to be installed, or use JSON instead"
             ) from exc
 
         try:
             payload = yaml.safe_load(text)
         except yaml.YAMLError as exc:
-            raise ValueError(f"Invalid discovery query YAML file: {exc}") from exc
+            raise ValueError(f"Invalid {config_kind.lower()} YAML file: {exc}") from exc
         return [] if payload is None else payload
 
-    raise ValueError("Discovery query config file must use .json, .yaml, or .yml")
+    raise ValueError(f"{config_kind} config file must use .json, .yaml, or .yml")

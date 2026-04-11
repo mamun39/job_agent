@@ -299,6 +299,8 @@ class SearchPlanQuery(BaseModel):
 
     source_site: str
     label: str
+    company_name: str | None = None
+    board_url: HttpUrl | None = None
     target_titles: list[str] = Field(default_factory=list)
     include_keywords: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
@@ -313,6 +315,13 @@ class SearchPlanQuery(BaseModel):
     @field_validator("label", mode="before")
     @classmethod
     def _normalize_plan_label(cls, value: str) -> str:
+        return _normalize_text(value)
+
+    @field_validator("company_name", mode="before")
+    @classmethod
+    def _normalize_plan_company_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         return _normalize_text(value)
 
     @field_validator(
@@ -364,6 +373,42 @@ class SearchPlan(BaseModel):
         if not self.queries:
             raise ValueError("queries must contain at least one executable query")
         return self
+
+
+class BoardRegistryEntry(BaseModel):
+    """Local registry entry for a supported company job board."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    company_name: str
+    source_site: str
+    board_url: HttpUrl
+    tags: list[str] = Field(default_factory=list)
+    location_hints: list[str] = Field(default_factory=list)
+
+    @field_validator("company_name", mode="before")
+    @classmethod
+    def _normalize_company_name(cls, value: str) -> str:
+        return _normalize_text(value)
+
+    @field_validator("source_site", mode="before")
+    @classmethod
+    def _normalize_board_source_site(cls, value: str) -> str:
+        return _normalize_text(value)
+
+    @field_validator("source_site")
+    @classmethod
+    def _validate_board_source_site(cls, value: str) -> str:
+        normalized = value.lower().replace(" ", "_").replace("-", "_")
+        if normalized not in SUPPORTED_DISCOVERY_SITES:
+            supported = ", ".join(sorted(SUPPORTED_DISCOVERY_SITES))
+            raise ValueError(f"source_site must be one of: {supported}")
+        return normalized
+
+    @field_validator("tags", "location_hints", mode="before")
+    @classmethod
+    def _normalize_registry_lists(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
 
 
 class MatchExplanation(BaseModel):

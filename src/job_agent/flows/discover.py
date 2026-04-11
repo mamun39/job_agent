@@ -145,6 +145,8 @@ def run_discovery_query(
             screenshot_name=screenshot_name,
             max_pages_per_query=max_pages_per_query or load_max_pages_per_query(),
             enrich_details=options.enrich_greenhouse_details,
+            selective_detail_enrichment=options.selective_detail_enrichment,
+            min_listing_stage_score=options.min_listing_stage_score_for_detail_enrichment,
             telemetry=telemetry,
             capture_failure_artifacts=capture_failure_artifacts,
             artifact_dir=artifact_dir,
@@ -159,6 +161,8 @@ def run_discovery_query(
             screenshot_name=screenshot_name,
             max_pages_per_query=max_pages_per_query or load_max_pages_per_query(),
             enrich_details=options.enrich_lever_details,
+            selective_detail_enrichment=options.selective_detail_enrichment,
+            min_listing_stage_score=options.min_listing_stage_score_for_detail_enrichment,
             telemetry=telemetry,
             capture_failure_artifacts=capture_failure_artifacts,
             artifact_dir=artifact_dir,
@@ -214,6 +218,8 @@ def _run_greenhouse_discovery_query(
     screenshot_name: str | None,
     max_pages_per_query: int,
     enrich_details: bool,
+    selective_detail_enrichment: bool,
+    min_listing_stage_score: int,
     telemetry: DiscoveryTelemetry,
     capture_failure_artifacts: bool,
     artifact_dir: Path,
@@ -312,6 +318,7 @@ def _run_greenhouse_discovery_query(
     if enrich_details and aggregated_postings:
         aggregated_postings = _enrich_greenhouse_postings(
             adapter=adapter,
+            query=query,
             session=session,
             postings=aggregated_postings,
             telemetry=telemetry,
@@ -320,6 +327,8 @@ def _run_greenhouse_discovery_query(
             query_label=query.label,
             artifact_timestamp=artifact_timestamp,
             artifact_dirs=artifact_dirs,
+            selective=selective_detail_enrichment,
+            min_listing_stage_score=min_listing_stage_score,
         )
 
     result = _run_discovery_with_telemetry(
@@ -341,6 +350,7 @@ def _run_greenhouse_discovery_query(
 def _enrich_greenhouse_postings(
     *,
     adapter: GreenhouseAdapter,
+    query: DiscoveryQuery,
     session: BrowserSessionManager,
     postings: list[JobPosting],
     telemetry: DiscoveryTelemetry,
@@ -349,9 +359,23 @@ def _enrich_greenhouse_postings(
     query_label: str,
     artifact_timestamp: datetime,
     artifact_dirs: set[str],
+    selective: bool,
+    min_listing_stage_score: int,
 ) -> list[JobPosting]:
     enriched_postings: list[JobPosting] = []
+    selected_postings = _select_postings_for_detail_enrichment(
+        query=query,
+        postings=postings,
+        selective=selective,
+        min_listing_stage_score=min_listing_stage_score,
+    )
+    telemetry.detail_enrichment_selected += len(selected_postings)
+    selected_urls = {posting.url.unicode_string() for posting in selected_postings}
     for posting in postings:
+        if posting.url.unicode_string() not in selected_urls:
+            enriched_postings.append(posting)
+            continue
+        telemetry.detail_fetch_attempts += 1
         try:
             html = fetch_listing_page_html(session=session, url=posting.url.unicode_string())
             telemetry.detail_pages_fetched += 1
@@ -376,6 +400,7 @@ def _enrich_greenhouse_postings(
             continue
         try:
             detail = adapter.parse_job_detail(url=posting.url.unicode_string(), html=html)
+            telemetry.detail_enrichment_successes += 1
             enriched_postings.append(_merge_detail_into_listing(posting, detail.posting))
         except Exception:
             LOGGER.exception(
@@ -441,6 +466,8 @@ def _run_lever_discovery_query(
     screenshot_name: str | None,
     max_pages_per_query: int,
     enrich_details: bool,
+    selective_detail_enrichment: bool,
+    min_listing_stage_score: int,
     telemetry: DiscoveryTelemetry,
     capture_failure_artifacts: bool,
     artifact_dir: Path,
@@ -539,6 +566,7 @@ def _run_lever_discovery_query(
     if enrich_details and aggregated_postings:
         aggregated_postings = _enrich_lever_postings(
             adapter=adapter,
+            query=query,
             session=session,
             postings=aggregated_postings,
             telemetry=telemetry,
@@ -547,6 +575,8 @@ def _run_lever_discovery_query(
             query_label=query.label,
             artifact_timestamp=artifact_timestamp,
             artifact_dirs=artifact_dirs,
+            selective=selective_detail_enrichment,
+            min_listing_stage_score=min_listing_stage_score,
         )
 
     result = _run_discovery_with_telemetry(
@@ -568,6 +598,7 @@ def _run_lever_discovery_query(
 def _enrich_lever_postings(
     *,
     adapter: LeverAdapter,
+    query: DiscoveryQuery,
     session: BrowserSessionManager,
     postings: list[JobPosting],
     telemetry: DiscoveryTelemetry,
@@ -576,9 +607,23 @@ def _enrich_lever_postings(
     query_label: str,
     artifact_timestamp: datetime,
     artifact_dirs: set[str],
+    selective: bool,
+    min_listing_stage_score: int,
 ) -> list[JobPosting]:
     enriched_postings: list[JobPosting] = []
+    selected_postings = _select_postings_for_detail_enrichment(
+        query=query,
+        postings=postings,
+        selective=selective,
+        min_listing_stage_score=min_listing_stage_score,
+    )
+    telemetry.detail_enrichment_selected += len(selected_postings)
+    selected_urls = {posting.url.unicode_string() for posting in selected_postings}
     for posting in postings:
+        if posting.url.unicode_string() not in selected_urls:
+            enriched_postings.append(posting)
+            continue
+        telemetry.detail_fetch_attempts += 1
         try:
             html = fetch_listing_page_html(session=session, url=posting.url.unicode_string())
             telemetry.detail_pages_fetched += 1
@@ -603,6 +648,7 @@ def _enrich_lever_postings(
             continue
         try:
             detail = adapter.parse_job_detail(url=posting.url.unicode_string(), html=html)
+            telemetry.detail_enrichment_successes += 1
             enriched_postings.append(_merge_detail_into_listing(posting, detail.posting))
         except Exception:
             LOGGER.exception(
@@ -658,3 +704,51 @@ def _current_exception() -> Exception:
     if isinstance(exc, Exception):
         return exc
     return RuntimeError("unknown discovery failure")
+
+
+def _select_postings_for_detail_enrichment(
+    *,
+    query: DiscoveryQuery,
+    postings: list[JobPosting],
+    selective: bool,
+    min_listing_stage_score: int,
+) -> list[JobPosting]:
+    if not selective:
+        return postings
+    selected: list[JobPosting] = []
+    for posting in postings:
+        score = _score_listing_stage_match(query=query, posting=posting)
+        if score >= min_listing_stage_score:
+            selected.append(posting)
+    return selected
+
+
+def _score_listing_stage_match(*, query: DiscoveryQuery, posting: JobPosting) -> int:
+    score = 0
+    title_text = posting.title.casefold()
+    company_text = posting.company.casefold()
+    location_text = posting.location.casefold()
+    description_text = posting.description_text.casefold()
+
+    for keyword in query.include_keywords:
+        normalized = keyword.casefold()
+        if normalized in title_text:
+            score += 3
+        elif normalized in description_text or normalized in company_text:
+            score += 1
+
+    for location_hint in query.location_hints:
+        normalized = location_hint.casefold()
+        if normalized in location_text:
+            score += 2
+        elif normalized in title_text or normalized in description_text:
+            score += 1
+
+    for keyword in query.exclude_keywords:
+        normalized = keyword.casefold()
+        if normalized in title_text or normalized in location_text:
+            score -= 3
+        elif normalized in description_text:
+            score -= 1
+
+    return score

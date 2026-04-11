@@ -103,7 +103,9 @@ def render_discovery_summary(result: CrawlResult) -> str:
         f"inserted={metadata.get('jobs_inserted', metadata.get('inserted_count', 0))} "
         f"updated={metadata.get('jobs_updated', metadata.get('updated_count', 0))} "
         f"duplicates={metadata.get('jobs_skipped_duplicates', metadata.get('duplicate_count', 0))} "
-        f"detail_pages={metadata.get('detail_pages_fetched', 0)} "
+        f"detail_selected={metadata.get('detail_enrichment_selected', 0)} "
+        f"detail_attempts={metadata.get('detail_fetch_attempts', 0)} "
+        f"detail_successes={metadata.get('detail_enrichment_successes', 0)} "
         f"detail_failures={metadata.get('detail_parse_failures', 0)}"
     )
 

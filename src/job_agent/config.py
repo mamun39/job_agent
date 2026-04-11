@@ -137,6 +137,11 @@ def load_discovery_options() -> DiscoveryOptions:
     return DiscoveryOptions(
         enrich_greenhouse_details=_parse_bool(os.getenv("JOB_AGENT_ENRICH_GREENHOUSE_DETAILS", "false")),
         enrich_lever_details=_parse_bool(os.getenv("JOB_AGENT_ENRICH_LEVER_DETAILS", "false")),
+        selective_detail_enrichment=_parse_bool(os.getenv("JOB_AGENT_SELECTIVE_DETAIL_ENRICHMENT", "false")),
+        min_listing_stage_score_for_detail_enrichment=_parse_positive_int(
+            os.getenv("JOB_AGENT_MIN_LISTING_SCORE_FOR_DETAIL_ENRICHMENT", "1"),
+            env_var="JOB_AGENT_MIN_LISTING_SCORE_FOR_DETAIL_ENRICHMENT",
+        ),
     )
 
 

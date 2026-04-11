@@ -51,14 +51,19 @@ def test_discovery_telemetry_aggregates_summary_fields_for_successful_run(tmp_pa
     assert result.metadata["jobs_inserted"] == 2
     assert result.metadata["jobs_updated"] == 0
     assert result.metadata["jobs_skipped_duplicates"] == 0
+    assert result.metadata["detail_enrichment_selected"] == 2
+    assert result.metadata["detail_fetch_attempts"] == 2
     assert result.metadata["detail_pages_fetched"] == 2
+    assert result.metadata["detail_enrichment_successes"] == 2
     assert result.metadata["detail_parse_failures"] == 0
 
     summary = render_discovery_summary(result)
     assert "queries=1" in summary
     assert "pages=1" in summary
     assert "jobs=2" in summary
-    assert "detail_pages=2" in summary
+    assert "detail_selected=2" in summary
+    assert "detail_attempts=2" in summary
+    assert "detail_successes=2" in summary
 
 
 def test_discovery_telemetry_accounts_for_representative_failures_and_logs_them(tmp_path, monkeypatch) -> None:
@@ -122,7 +127,10 @@ def test_discovery_telemetry_accounts_for_representative_failures_and_logs_them(
     assert result.metadata["jobs_inserted"] == 1
     assert result.metadata["jobs_updated"] == 0
     assert result.metadata["jobs_skipped_duplicates"] == 0
+    assert result.metadata["detail_enrichment_selected"] == 1
+    assert result.metadata["detail_fetch_attempts"] == 1
     assert result.metadata["detail_pages_fetched"] == 0
+    assert result.metadata["detail_enrichment_successes"] == 0
     assert result.metadata["detail_parse_failures"] == 1
 
     log_lines = [json.loads(line) for line in stream.getvalue().splitlines() if line.strip()]
@@ -144,7 +152,10 @@ def test_render_discovery_summary_uses_new_telemetry_fields() -> None:
             "jobs_inserted": 2,
             "jobs_updated": 1,
             "jobs_skipped_duplicates": 1,
+            "detail_enrichment_selected": 3,
+            "detail_fetch_attempts": 3,
             "detail_pages_fetched": 3,
+            "detail_enrichment_successes": 2,
             "detail_parse_failures": 1,
         },
     )
@@ -153,5 +164,5 @@ def test_render_discovery_summary_uses_new_telemetry_fields() -> None:
 
     assert summary == (
         "queries=1 pages=2 failed_pages=1 jobs=4 inserted=2 updated=1 duplicates=1 "
-        "detail_pages=3 detail_failures=1"
+        "detail_selected=3 detail_attempts=3 detail_successes=2 detail_failures=1"
     )

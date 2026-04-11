@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from job_agent.config import load_board_registry, load_browser_auth_mode, load_discovery_queries, load_settings
+from job_agent.config import load_board_registry, load_browser_auth_mode, load_discovery_options, load_discovery_queries, load_settings
 
 
 def test_load_discovery_queries_from_env_json(monkeypatch) -> None:
@@ -170,3 +170,15 @@ def test_invalid_authenticated_browser_mode_fails_clearly(monkeypatch) -> None:
         load_browser_auth_mode()
 
     assert "must be one of: profile, attach" in str(exc_info.value)
+
+
+def test_load_discovery_options_reads_selective_detail_enrichment_settings(monkeypatch) -> None:
+    monkeypatch.setenv("JOB_AGENT_ENRICH_GREENHOUSE_DETAILS", "true")
+    monkeypatch.setenv("JOB_AGENT_SELECTIVE_DETAIL_ENRICHMENT", "true")
+    monkeypatch.setenv("JOB_AGENT_MIN_LISTING_SCORE_FOR_DETAIL_ENRICHMENT", "3")
+
+    options = load_discovery_options()
+
+    assert options.enrich_greenhouse_details is True
+    assert options.selective_detail_enrichment is True
+    assert options.min_listing_stage_score_for_detail_enrichment == 3

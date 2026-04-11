@@ -72,6 +72,10 @@ def test_lever_discovery_detail_enrichment_updates_stored_job_when_enabled(tmp_p
     assert enriched.metadata["team"] == "Platform Engineering"
     assert enriched.employment_type is EmploymentType.FULL_TIME
     assert fallback.description_text == "Listing-only discovery from Lever jobs page."
+    assert result.metadata["detail_enrichment_selected"] == 2
+    assert result.metadata["detail_fetch_attempts"] == 2
+    assert result.metadata["detail_enrichment_successes"] == 1
+    assert result.metadata["detail_parse_failures"] == 1
 
 
 def test_lever_discovery_detail_enrichment_keeps_listing_data_when_disabled(tmp_path, monkeypatch) -> None:
@@ -97,3 +101,56 @@ def test_lever_discovery_detail_enrichment_keeps_listing_data_when_disabled(tmp_
 
     assert stored_job is not None
     assert stored_job.description_text == "Listing-only discovery from Lever jobs page."
+
+
+def test_lever_selective_detail_enrichment_only_fetches_promising_listing_candidates(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "lever_selective.db"
+    repo = JobsRepository(init_db(db_path))
+    query = DiscoveryQuery(
+        source_site="lever",
+        label="Backend roles",
+        start_url="https://jobs.lever.co/exampleco",
+        include_keywords=["Backend"],
+    )
+    listing_html = Path("tests/fixtures/lever_jobs_sample.html").read_text(encoding="utf-8")
+    detail_html = Path("tests/fixtures/lever_job_detail_sample.html").read_text(encoding="utf-8")
+    fetched_urls: list[str] = []
+
+    pages = {
+        "https://jobs.lever.co/exampleco": listing_html,
+        "https://jobs.lever.co/exampleco/abc123": detail_html,
+    }
+
+    def fake_fetch(*, session, url, screenshot_name=None, wait_until="networkidle", wait_delay_ms=0):  # noqa: ARG001
+        fetched_urls.append(url)
+        return pages[url]
+
+    monkeypatch.setattr("job_agent.flows.discover.fetch_listing_page_html", fake_fetch)
+
+    result = run_discovery_query(
+        query=query,
+        session=_FakeSession(),
+        jobs_repo=repo,
+        options=DiscoveryOptions(
+            enrich_lever_details=True,
+            selective_detail_enrichment=True,
+            min_listing_stage_score_for_detail_enrichment=3,
+        ),
+    )
+
+    assert fetched_urls == [
+        "https://jobs.lever.co/exampleco",
+        "https://jobs.lever.co/exampleco/abc123",
+    ]
+    assert result.metadata["jobs_parsed"] == 2
+    assert result.metadata["detail_enrichment_selected"] == 1
+    assert result.metadata["detail_fetch_attempts"] == 1
+    assert result.metadata["detail_enrichment_successes"] == 1
+    assert result.metadata["detail_parse_failures"] == 0
+
+    enriched = repo.fetch_by_source_identity("lever", "abc123")
+    skipped = repo.fetch_by_source_identity("lever", "xyz789")
+    assert enriched is not None
+    assert skipped is not None
+    assert enriched.description_text.startswith("Build backend services used across the product.")
+    assert skipped.description_text == "Listing-only discovery from Lever jobs page."

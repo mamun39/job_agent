@@ -81,6 +81,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable optional Lever detail-page enrichment for this run.",
     )
+    discover_parser.add_argument(
+        "--selective-details",
+        action="store_true",
+        help="Only enrich detail pages for listings that pass cheap deterministic listing-stage signals.",
+    )
+    discover_parser.add_argument(
+        "--min-detail-candidate-score",
+        type=int,
+        help="Minimum listing-stage score required before a job is selected for detail enrichment.",
+    )
     _add_authenticated_browser_options(discover_parser)
 
     search_parser = subparsers.add_parser(
@@ -240,6 +250,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             enrich_lever_details=(
                 settings.discovery_options.enrich_lever_details or bool(args.lever_details)
+            ),
+            selective_detail_enrichment=(
+                settings.discovery_options.selective_detail_enrichment or bool(args.selective_details)
+            ),
+            min_listing_stage_score_for_detail_enrichment=(
+                args.min_detail_candidate_score
+                if args.min_detail_candidate_score is not None
+                else settings.discovery_options.min_listing_stage_score_for_detail_enrichment
             ),
         )
         repo = JobsRepository(init_db(settings.db_path))
@@ -729,7 +747,10 @@ def _aggregate_discovery_results(results: Sequence[CrawlResult]) -> dict[str, in
         "jobs_inserted": 0,
         "jobs_updated": 0,
         "jobs_skipped_duplicates": 0,
+        "detail_enrichment_selected": 0,
+        "detail_fetch_attempts": 0,
         "detail_pages_fetched": 0,
+        "detail_enrichment_successes": 0,
         "detail_parse_failures": 0,
     }
     for result in results:

@@ -90,12 +90,12 @@ def test_cli_discover_prints_summary_and_surfaces_failures(tmp_path, monkeypatch
     assert exit_code == 1
     assert (
         "[ok] Greenhouse ok (greenhouse) queries=1 pages=1 failed_pages=0 jobs=2 "
-        "inserted=2 updated=0 duplicates=0 detail_pages=0 detail_failures=0"
+        "inserted=2 updated=0 duplicates=0 detail_selected=0 detail_attempts=0 detail_successes=0 detail_failures=0"
     ) in captured.out
     assert "[error] Lever fail (lever) fetch failed" in captured.out
     assert (
         "[summary] queries=1 pages=1 failed_pages=0 jobs=2 inserted=2 updated=0 "
-        "duplicates=0 detail_pages=0 detail_failures=0"
+        "duplicates=0 detail_selected=0 detail_attempts=0 detail_successes=0 detail_failures=0"
     ) in captured.out
 
 
@@ -132,7 +132,10 @@ def test_cli_discover_passes_runtime_detail_enrichment_options(tmp_path, monkeyp
                     "jobs_inserted": 0,
                     "jobs_updated": 0,
                     "jobs_skipped_duplicates": 0,
+                    "detail_enrichment_selected": 0,
+                    "detail_fetch_attempts": 0,
                     "detail_pages_fetched": 0,
+                    "detail_enrichment_successes": 0,
                     "detail_parse_failures": 0,
                 }
             },
@@ -151,6 +154,8 @@ def test_cli_discover_passes_runtime_detail_enrichment_options(tmp_path, monkeyp
     assert recorded_options[0] == DiscoveryOptions(
         enrich_greenhouse_details=True,
         enrich_lever_details=True,
+        selective_detail_enrichment=False,
+        min_listing_stage_score_for_detail_enrichment=1,
     )
 
 
@@ -187,7 +192,10 @@ def test_cli_discover_uses_configured_detail_enrichment_options(tmp_path, monkey
                     "jobs_inserted": 0,
                     "jobs_updated": 0,
                     "jobs_skipped_duplicates": 0,
+                    "detail_enrichment_selected": 0,
+                    "detail_fetch_attempts": 0,
                     "detail_pages_fetched": 0,
+                    "detail_enrichment_successes": 0,
                     "detail_parse_failures": 0,
                 }
             },
@@ -206,6 +214,63 @@ def test_cli_discover_uses_configured_detail_enrichment_options(tmp_path, monkey
     assert recorded_options[0] == DiscoveryOptions(
         enrich_greenhouse_details=False,
         enrich_lever_details=True,
+        selective_detail_enrichment=False,
+        min_listing_stage_score_for_detail_enrichment=1,
+    )
+
+
+def test_cli_discover_passes_selective_detail_enrichment_options(tmp_path, monkeypatch, capsys) -> None:
+    settings = Settings(
+        db_path=tmp_path / "cli.db",
+        discovery_queries=[
+            DiscoveryQuery(
+                source_site="greenhouse",
+                label="Greenhouse details",
+                start_url="https://boards.greenhouse.io/exampleco",
+            )
+        ],
+        discovery_options=DiscoveryOptions(),
+    )
+    recorded_options: list[DiscoveryOptions] = []
+
+    def fake_run_discovery_query(*, query, session, jobs_repo, screenshot_name=None, options=None, **kwargs):  # noqa: ARG001
+        recorded_options.append(options)
+        return type(
+            "Result",
+            (),
+            {
+                "metadata": {
+                    "parsed_count": 0,
+                    "queries_attempted": 1,
+                    "pages_fetched": 1,
+                    "pages_failed": 0,
+                    "jobs_parsed": 0,
+                    "jobs_inserted": 0,
+                    "jobs_updated": 0,
+                    "jobs_skipped_duplicates": 0,
+                    "detail_enrichment_selected": 0,
+                    "detail_fetch_attempts": 0,
+                    "detail_pages_fetched": 0,
+                    "detail_enrichment_successes": 0,
+                    "detail_parse_failures": 0,
+                }
+            },
+        )()
+
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: settings)
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+    monkeypatch.setattr("job_agent.main.run_discovery_query", fake_run_discovery_query)
+    monkeypatch.setattr("job_agent.main.BrowserSessionManager.from_settings", lambda settings: _FakeSession())
+
+    exit_code = main(["discover", "--greenhouse-details", "--selective-details", "--min-detail-candidate-score", "3"])
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert recorded_options[0] == DiscoveryOptions(
+        enrich_greenhouse_details=True,
+        enrich_lever_details=False,
+        selective_detail_enrichment=True,
+        min_listing_stage_score_for_detail_enrichment=3,
     )
 
 

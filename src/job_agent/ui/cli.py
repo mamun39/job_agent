@@ -257,6 +257,16 @@ def format_store_matches_summary(*, inserted_count: int, total_matches: int) -> 
     return f"Stored {inserted_count} new matched jobs out of {total_matches} matched."
 
 
+def format_saved_search_summary(*, name: str) -> str:
+    """Render a concise summary for saving a reusable prompt."""
+    return f"Saved prompt as '{name}'."
+
+
+def export_prompt_search_matches_csv(matched_jobs: list[MatchedJobMatch], output_path: str | Path) -> Path:
+    """Export matched prompt-search results to CSV."""
+    return export_jobs_csv([matched.job for matched in matched_jobs], output_path)
+
+
 def apply_score_result(job: JobPosting, score_result: ScoreResult) -> JobPosting:
     """Return a job copy with refreshed score metadata applied."""
     metadata = dict(job.metadata)

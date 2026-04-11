@@ -50,6 +50,14 @@ SCHEMA_STATEMENTS = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_review_decisions_decision ON review_decisions(decision)",
+    """
+    CREATE TABLE IF NOT EXISTS saved_searches (
+        name TEXT PRIMARY KEY,
+        raw_prompt_text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
 )
 
 

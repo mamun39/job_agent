@@ -521,6 +521,22 @@ class PromptSearchResult(BaseModel):
     rejected_jobs: list[RejectedJobMatch] = Field(default_factory=list)
 
 
+class SavedSearch(BaseModel):
+    """Locally persisted reusable raw prompt."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str
+    raw_prompt_text: str
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("name", "raw_prompt_text", mode="before")
+    @classmethod
+    def _normalize_saved_search_text(cls, value: str) -> str:
+        return _normalize_text(value)
+
+
 class CrawlResult(BaseModel):
     """Result of a crawl or fetch attempt."""
 

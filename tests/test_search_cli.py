@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import csv
+
 from job_agent.config import Settings
 from job_agent.core.models import MatchedJobMatch, JobPosting, PromptSearchResult, RejectedJobMatch, SearchIntent, SearchPlan
 from job_agent.main import main
@@ -149,3 +151,60 @@ def test_search_command_can_store_new_matches(monkeypatch, tmp_path, capsys) -> 
         "https://boards.greenhouse.io/example/jobs/1",
         "https://boards.greenhouse.io/example/jobs/2",
     }
+
+
+def test_search_command_can_save_prompt_and_rerun_by_name(monkeypatch, tmp_path, capsys) -> None:
+    db_path = tmp_path / "search.db"
+    captured_prompts: list[str] = []
+
+    def fake_run_prompt_search(**kwargs):
+        captured_prompts.append(kwargs["prompt_text"])
+        return _prompt_result(matched_jobs=[_matched(_matched_job())], rejected_jobs=[])
+
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+    monkeypatch.setattr("job_agent.main.BrowserSessionManager.from_settings", lambda settings: _FakeSession())
+    monkeypatch.setattr("job_agent.main.run_prompt_search", fake_run_prompt_search)
+
+    first_exit = main(["search", "Find AI security roles in Canada", "--save-search", "ai-security"])
+    first_captured = capsys.readouterr()
+    second_exit = main(["search", "--saved-search", "ai-security"])
+    second_captured = capsys.readouterr()
+
+    repo = JobsRepository(init_db(db_path))
+    saved = repo.get_saved_search(name="ai-security")
+    assert first_exit == 0
+    assert second_exit == 0
+    assert saved is not None
+    assert saved.raw_prompt_text == "Find AI security roles in Canada"
+    assert captured_prompts == [
+        "Find AI security roles in Canada",
+        "Find AI security roles in Canada",
+    ]
+    assert "Saved prompt as 'ai-security'." in first_captured.out
+    assert "Summary: boards=1 discovered=1 matched=1 rejected=0" in second_captured.out
+
+
+def test_search_command_can_export_matched_results_to_csv(monkeypatch, tmp_path, capsys) -> None:
+    db_path = tmp_path / "search.db"
+    output_path = tmp_path / "matched.csv"
+
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+    monkeypatch.setattr("job_agent.main.BrowserSessionManager.from_settings", lambda settings: _FakeSession())
+    monkeypatch.setattr(
+        "job_agent.main.run_prompt_search",
+        lambda **kwargs: _prompt_result(matched_jobs=[_matched(_matched_job())], rejected_jobs=[]),
+    )
+
+    exit_code = main(["search", "Find AI security roles in Canada", "--export", str(output_path)])
+    captured = capsys.readouterr()
+
+    with output_path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert exit_code == 0
+    assert "Exported 1 matched jobs to" in captured.out
+    assert len(rows) == 1
+    assert rows[0]["title"] == "AI Security Engineer"
+    assert rows[0]["company"] == "Example Co"

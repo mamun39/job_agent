@@ -7,7 +7,7 @@ import json
 import sqlite3
 from typing import Any
 
-from job_agent.core.models import JobPosting, JobStatus, ReviewDecision, ReviewStatus
+from job_agent.core.models import JobPosting, JobStatus, ReviewDecision, ReviewStatus, SavedSearch
 
 
 class JobsRepository:
@@ -394,6 +394,67 @@ class JobsRepository:
         )
         self._connection.commit()
         return int(cursor.rowcount if cursor.rowcount is not None else 0)
+
+    def save_search_prompt(
+        self,
+        *,
+        name: str,
+        raw_prompt_text: str,
+        now: datetime | None = None,
+    ) -> SavedSearch:
+        """Persist or update a reusable raw search prompt by name."""
+        timestamp = now or datetime.now(UTC)
+        payload = {
+            "name": name,
+            "raw_prompt_text": raw_prompt_text,
+            "created_at": self._serialize_datetime(timestamp),
+            "updated_at": self._serialize_datetime(timestamp),
+        }
+        self._connection.execute(
+            """
+            INSERT INTO saved_searches (
+                name,
+                raw_prompt_text,
+                created_at,
+                updated_at
+            ) VALUES (
+                :name,
+                :raw_prompt_text,
+                :created_at,
+                :updated_at
+            )
+            ON CONFLICT(name) DO UPDATE SET
+                raw_prompt_text = excluded.raw_prompt_text,
+                updated_at = excluded.updated_at
+            """,
+            payload,
+        )
+        self._connection.commit()
+        saved = self.get_saved_search(name=name)
+        if saved is None:
+            raise RuntimeError("saved search write succeeded but could not be reloaded")
+        return saved
+
+    def get_saved_search(self, *, name: str) -> SavedSearch | None:
+        """Fetch a reusable saved search prompt by name."""
+        row = self._connection.execute(
+            """
+            SELECT name, raw_prompt_text, created_at, updated_at
+            FROM saved_searches
+            WHERE name = ?
+            """,
+            (name,),
+        ).fetchone()
+        if row is None:
+            return None
+        return SavedSearch.model_validate(
+            {
+                "name": row["name"],
+                "raw_prompt_text": row["raw_prompt_text"],
+                "created_at": self._parse_datetime(row["created_at"]),
+                "updated_at": self._parse_datetime(row["updated_at"]),
+            }
+        )
 
     def _job_to_row(self, job: JobPosting) -> dict[str, Any]:
         return {

@@ -20,11 +20,13 @@ from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
 from job_agent.ui.cli import (
     apply_score_result,
+    export_prompt_search_matches_csv,
     export_jobs_csv,
     format_cleanup_summary,
     format_mark_stale_summary,
     format_review_update_result,
     format_rescore_summary,
+    format_saved_search_summary,
     format_store_matches_summary,
     open_job_in_browser,
     parse_job_status,
@@ -78,6 +80,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     search_parser.add_argument("prompt", nargs="?", help="Inline natural-language search prompt.")
     search_parser.add_argument("--prompt-file", help="Path to a text file containing the prompt.")
+    search_parser.add_argument("--saved-search", help="Run a previously saved prompt by name.")
+    search_parser.add_argument("--save-search", help="Save the resolved raw prompt under this name for reuse.")
+    search_parser.add_argument("--export", help="Export matched prompt-search results to CSV.")
     search_parser.add_argument(
         "--show-rejected",
         action="store_true",
@@ -216,11 +221,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1 if failures else 0
 
     if args.command == "search":
+        saved_search_repo = JobsRepository(init_db(settings.db_path))
         try:
-            prompt_text = _resolve_search_prompt(prompt=args.prompt, prompt_file=args.prompt_file)
+            prompt_text = _resolve_search_prompt(
+                prompt=args.prompt,
+                prompt_file=args.prompt_file,
+                saved_search_name=args.saved_search,
+                saved_search_repo=saved_search_repo,
+            )
         except ValueError as exc:
             print(str(exc))
             return 1
+
+        if args.save_search:
+            saved_search_repo.save_search_prompt(name=args.save_search, raw_prompt_text=prompt_text, now=datetime.now(UTC))
+            print(format_saved_search_summary(name=args.save_search))
 
         session = BrowserSessionManager.from_settings(settings)
         ephemeral_repo = JobsRepository(init_db(":memory:"))
@@ -249,6 +264,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             repo = JobsRepository(init_db(settings.db_path))
             inserted_count = _store_new_matched_jobs(repo, result.matched_jobs)
             print(format_store_matches_summary(inserted_count=inserted_count, total_matches=len(result.matched_jobs)))
+        if args.export:
+            output_path = export_prompt_search_matches_csv(result.matched_jobs, args.export)
+            print(f"Exported {len(result.matched_jobs)} matched jobs to {output_path}")
         return 0
 
     if args.command == "review":
@@ -448,9 +466,20 @@ def _format_missing_job_message(*, job_id: int | None, url: str | None) -> str:
     return f"Job not found for url: {url}"
 
 
-def _resolve_search_prompt(*, prompt: str | None, prompt_file: str | None) -> str:
-    if prompt and prompt_file:
-        raise ValueError("Provide either an inline prompt or --prompt-file, not both.")
+def _resolve_search_prompt(
+    *,
+    prompt: str | None,
+    prompt_file: str | None,
+    saved_search_name: str | None,
+    saved_search_repo: JobsRepository,
+) -> str:
+    provided = sum(
+        1
+        for value in (prompt if prompt and prompt.strip() else None, prompt_file, saved_search_name)
+        if value
+    )
+    if provided > 1:
+        raise ValueError("Provide exactly one of: inline prompt, --prompt-file, or --saved-search.")
     if prompt_file:
         path = Path(prompt_file)
         if not path.is_file():
@@ -459,9 +488,14 @@ def _resolve_search_prompt(*, prompt: str | None, prompt_file: str | None) -> st
         if not text:
             raise ValueError("Prompt file is empty.")
         return text
+    if saved_search_name:
+        saved = saved_search_repo.get_saved_search(name=saved_search_name)
+        if saved is None:
+            raise ValueError(f"Saved search not found: {saved_search_name}")
+        return saved.raw_prompt_text
     if prompt and prompt.strip():
         return prompt
-    raise ValueError("Provide a prompt or --prompt-file.")
+    raise ValueError("Provide a prompt, --prompt-file, or --saved-search.")
 
 
 def _store_new_matched_jobs(repo: JobsRepository, jobs: Sequence[MatchedJobMatch]) -> int:

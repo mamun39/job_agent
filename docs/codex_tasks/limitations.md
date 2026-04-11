@@ -5,6 +5,7 @@ Last updated: 2026-04-10
 ## Current limitations
 
 - The CLI exposes discovery and review commands, but it remains a plain command-line interface without richer interactive workflows.
+- The CLI now also exposes prompt-driven `search` commands for raw natural-language prompts, but the interface remains plain-text and intentionally non-interactive.
 - A minimal local dashboard now exists for review workflows, but it is intentionally server-rendered and limited to simple list/detail/review actions.
 - `.env` parsing is intentionally simple and only supports basic `KEY=VALUE` lines.
 - Logging is local and JSON-structured with basic discovery failure context, but it still does not include persistent sinks, broader correlation fields, or external telemetry/export integrations.
@@ -25,6 +26,7 @@ Last updated: 2026-04-10
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
 - Structured `SearchIntent` and `SearchPlan` models now exist for prompt-derived search workflows, a conservative rule-based prompt parser can extract simple explicit constraints into `SearchIntent`, and a conservative compiler can produce supported-source `SearchPlanQuery` entries for Greenhouse and Lever; local board-seed selection is now supported through an explicit registry of known company board URLs, but deeper semantic understanding, remote board discovery, and broader execution wiring are not implemented yet.
 - A synchronous prompt-driven search flow can now parse a raw prompt, compile a plan, resolve local board seeds, run supported discovery, and apply hard filters, but the end-to-end flow remains deterministic and limited to the current parser/compiler/registry capabilities rather than broader search understanding or automatic web exploration.
+- Prompt-driven search is now available from the CLI with inline prompts or prompt files, but default search runs are read-only unless matched jobs are explicitly persisted, and the command remains limited by conservative parsing, local board registry coverage, and the current synchronous discovery path.
 - Discovery query configuration can drive live listing-page discovery for supported adapters from one configured start URL per query, but multi-page traversal is implemented only for Greenhouse and Lever and remains limited by a conservative per-query page cap.
 - Prompt-driven executable planning is limited by local board-registry coverage; if a company board is not registered, the planner will not invent or discover a board URL.
 - Greenhouse detail enrichment is optional and conservative; it performs simple per-job detail fetches only after listing discovery and falls back to listing-derived data when detail fetches or parses fail.

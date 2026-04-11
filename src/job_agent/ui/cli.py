@@ -7,7 +7,16 @@ from pathlib import Path
 import sqlite3
 import webbrowser
 
-from job_agent.core.models import CrawlResult, JobPosting, JobStatus, ReviewDecision, ReviewStatus, ScoreResult
+from job_agent.core.models import (
+    CrawlResult,
+    JobPosting,
+    JobStatus,
+    PromptSearchResult,
+    RejectedJobMatch,
+    ReviewDecision,
+    ReviewStatus,
+    ScoreResult,
+)
 from job_agent.llm.summarizer import JobSummarizer, summarize_job_match
 
 
@@ -174,6 +183,58 @@ def format_mark_stale_summary(*, stale_count: int, stale_threshold_days: int) ->
 def format_cleanup_summary(*, removed_review_decisions: int) -> str:
     """Render a concise CLI summary for orphaned review-decision cleanup."""
     return f"Removed {removed_review_decisions} orphaned review decisions."
+
+
+def render_prompt_search_summary(result: PromptSearchResult) -> str:
+    """Render a concise plain-text summary for prompt-driven search."""
+    constraints = result.intent.constraints
+    highlights: list[str] = []
+    if constraints.target_titles:
+        highlights.append(f"titles={', '.join(constraints.target_titles)}")
+    if constraints.include_keywords:
+        highlights.append(f"include={', '.join(constraints.include_keywords)}")
+    if constraints.exclude_keywords:
+        highlights.append(f"exclude={', '.join(constraints.exclude_keywords)}")
+    if constraints.location_constraints:
+        highlights.append(f"locations={', '.join(constraints.location_constraints)}")
+    if constraints.include_companies:
+        highlights.append(f"companies={', '.join(constraints.include_companies)}")
+    if constraints.remote_preference.value != "unspecified":
+        highlights.append(f"remote={constraints.remote_preference.value}")
+    if constraints.freshness_window_days is not None:
+        highlights.append(f"freshness={constraints.freshness_window_days}d")
+    if not highlights:
+        highlights.append("no explicit constraints parsed")
+
+    return "\n".join(
+        [
+            f"Intent: {' | '.join(highlights)}",
+            (
+                f"Summary: boards={len(result.plan.queries)} discovered={result.discovered_jobs_count} "
+                f"matched={len(result.matched_jobs)} rejected={len(result.rejected_jobs)}"
+            ),
+        ]
+    )
+
+
+def render_rejected_jobs(rejected_jobs: list[RejectedJobMatch]) -> str:
+    """Render rejected prompt-search jobs and their rejection reasons."""
+    if not rejected_jobs:
+        return "No rejected jobs."
+    lines: list[str] = []
+    for index, rejected in enumerate(rejected_jobs, start=1):
+        job = rejected.job
+        lines.append(
+            f"{index}. [{job.source_site}] {job.title} | {job.company} | {job.location}"
+        )
+        lines.append(f"   {job.url}")
+        lines.append(f"   reasons={'; '.join(rejected.rejection_reasons)}")
+    return "\n".join(lines)
+
+
+def format_store_matches_summary(*, inserted_count: int, total_matches: int) -> str:
+    """Render a concise summary for prompt-search match persistence."""
+    return f"Stored {inserted_count} new matched jobs out of {total_matches} matched."
 
 
 def apply_score_result(job: JobPosting, score_result: ScoreResult) -> JobPosting:

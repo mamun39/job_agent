@@ -6,12 +6,14 @@ import argparse
 import logging
 from datetime import UTC, datetime
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from job_agent.browser.session import BrowserSessionManager
 from job_agent.config import load_settings
-from job_agent.core.models import CrawlResult, DiscoveryOptions
+from job_agent.core.models import CrawlResult, DiscoveryOptions, JobPosting
 from job_agent.flows.discover import run_discovery_query
+from job_agent.flows.prompt_search import run_prompt_search
 from job_agent.logging import configure_logging
 from job_agent.core.scoring import rescore_job_posting
 from job_agent.storage.db import init_db
@@ -23,12 +25,15 @@ from job_agent.ui.cli import (
     format_mark_stale_summary,
     format_review_update_result,
     format_rescore_summary,
+    format_store_matches_summary,
     open_job_in_browser,
     parse_job_status,
     parse_review_decision,
     render_discovery_summary,
     render_job_detail,
     render_jobs_list,
+    render_prompt_search_summary,
+    render_rejected_jobs,
     render_review_decision,
 )
 
@@ -64,6 +69,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--lever-details",
         action="store_true",
         help="Enable optional Lever detail-page enrichment for this run.",
+    )
+
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Run prompt-driven search from a raw natural-language prompt.",
+    )
+    search_parser.add_argument("prompt", nargs="?", help="Inline natural-language search prompt.")
+    search_parser.add_argument("--prompt-file", help="Path to a text file containing the prompt.")
+    search_parser.add_argument(
+        "--show-rejected",
+        action="store_true",
+        help="Show rejected jobs and hard-filter reasons.",
+    )
+    search_parser.add_argument(
+        "--store-matches",
+        action="store_true",
+        help="Persist newly matched jobs into the configured database.",
     )
 
     review_parser = subparsers.add_parser(
@@ -191,6 +213,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"[summary] {_render_aggregate_discovery_summary(aggregate)}")
 
         return 1 if failures else 0
+
+    if args.command == "search":
+        try:
+            prompt_text = _resolve_search_prompt(prompt=args.prompt, prompt_file=args.prompt_file)
+        except ValueError as exc:
+            print(str(exc))
+            return 1
+
+        session = BrowserSessionManager.from_settings(settings)
+        ephemeral_repo = JobsRepository(init_db(":memory:"))
+        try:
+            try:
+                result = run_prompt_search(
+                    prompt_text=prompt_text,
+                    session=session,
+                    jobs_repo=ephemeral_repo,
+                    board_registry=settings.board_registry,
+                    options=settings.discovery_options,
+                    now=datetime.now(UTC),
+                )
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+        finally:
+            session.close()
+
+        print(render_prompt_search_summary(result))
+        print(render_jobs_list(result.matched_jobs))
+        if args.show_rejected:
+            print("Rejected Jobs:")
+            print(render_rejected_jobs(result.rejected_jobs))
+        if args.store_matches:
+            repo = JobsRepository(init_db(settings.db_path))
+            inserted_count = _store_new_matched_jobs(repo, result.matched_jobs)
+            print(format_store_matches_summary(inserted_count=inserted_count, total_matches=len(result.matched_jobs)))
+        return 0
 
     if args.command == "review":
         repo = JobsRepository(init_db(settings.db_path))
@@ -387,6 +445,35 @@ def _format_missing_job_message(*, job_id: int | None, url: str | None) -> str:
     if job_id is not None:
         return f"Job not found for id: {job_id}"
     return f"Job not found for url: {url}"
+
+
+def _resolve_search_prompt(*, prompt: str | None, prompt_file: str | None) -> str:
+    if prompt and prompt_file:
+        raise ValueError("Provide either an inline prompt or --prompt-file, not both.")
+    if prompt_file:
+        path = Path(prompt_file)
+        if not path.is_file():
+            raise ValueError(f"Prompt file does not exist: {path}")
+        text = path.read_text(encoding="utf-8").strip()
+        if not text:
+            raise ValueError("Prompt file is empty.")
+        return text
+    if prompt and prompt.strip():
+        return prompt
+    raise ValueError("Provide a prompt or --prompt-file.")
+
+
+def _store_new_matched_jobs(repo: JobsRepository, jobs: Sequence[JobPosting]) -> int:
+    inserted_count = 0
+    for job in jobs:
+        existing = repo.fetch_by_url(job.url.unicode_string())
+        if existing is None and job.source_job_id:
+            existing = repo.fetch_by_source_identity(job.source_site, job.source_job_id)
+        if existing is not None:
+            continue
+        repo.insert_job(job)
+        inserted_count += 1
+    return inserted_count
 
 
 def _aggregate_discovery_results(results: Sequence[CrawlResult]) -> dict[str, int]:

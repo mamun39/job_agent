@@ -6,6 +6,7 @@ from job_agent.core import (
     JobPosting,
     MatchExplanation,
     ReviewDecision,
+    compile_search_intent,
     parse_search_intent,
     SearchConstraint,
     SearchIntent,
@@ -25,6 +26,7 @@ __all__ = [
     "SearchPlanQuery",
     "MatchExplanation",
     "parse_search_intent",
+    "compile_search_intent",
     "CrawlResult",
     "ReviewDecision",
 ]

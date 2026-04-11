@@ -298,6 +298,7 @@ class SearchPlanQuery(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     source_site: str
+    label: str
     target_titles: list[str] = Field(default_factory=list)
     include_keywords: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
@@ -307,6 +308,12 @@ class SearchPlanQuery(BaseModel):
     freshness_window_days: int | None = Field(default=None, ge=1, le=365)
     include_companies: list[str] = Field(default_factory=list)
     exclude_companies: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def _normalize_plan_label(cls, value: str) -> str:
+        return _normalize_text(value)
 
     @field_validator(
         "target_titles",
@@ -315,6 +322,7 @@ class SearchPlanQuery(BaseModel):
         "location_constraints",
         "include_companies",
         "exclude_companies",
+        "notes",
         mode="before",
     )
     @classmethod
@@ -344,6 +352,12 @@ class SearchPlan(BaseModel):
     intent: SearchIntent
     queries: list[SearchPlanQuery] = Field(default_factory=list)
     constraints: SearchConstraint | None = None
+    notes: list[str] = Field(default_factory=list)
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def _normalize_plan_notes(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
 
     @model_validator(mode="after")
     def _validate_queries(self) -> SearchPlan:

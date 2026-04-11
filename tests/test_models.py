@@ -185,6 +185,7 @@ def test_search_plan_validates_supported_executable_queries() -> None:
         queries=[
             {
                 "source_site": "Greenhouse",
+                "label": "Greenhouse Platform Engineer",
                 "target_titles": ["Platform Engineer"],
                 "include_keywords": ["python", "backend"],
                 "location_constraints": ["Canada"],
@@ -194,6 +195,7 @@ def test_search_plan_validates_supported_executable_queries() -> None:
             },
             {
                 "source_site": "lever",
+                "label": "Lever Backend Engineer",
                 "target_titles": ["Backend Engineer"],
                 "exclude_keywords": ["manager"],
                 "include_companies": ["Example Co"],
@@ -209,7 +211,7 @@ def test_search_plan_validates_supported_executable_queries() -> None:
 
 def test_search_plan_query_rejects_unsupported_source_site() -> None:
     with pytest.raises(ValidationError) as exc_info:
-        SearchPlanQuery(source_site="linkedin", include_keywords=["python"])
+        SearchPlanQuery(label="LinkedIn Python Roles", source_site="linkedin", include_keywords=["python"])
 
     assert "source_site must be one of: greenhouse, lever" in str(exc_info.value)
 

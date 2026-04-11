@@ -97,6 +97,7 @@ def run_discovery_query(
             jobs_repo=jobs_repo,
             screenshot_name=screenshot_name,
             max_pages_per_query=max_pages_per_query or load_max_pages_per_query(),
+            enrich_details=options.enrich_lever_details,
         )
     else:
         html = fetch_listing_page_html(
@@ -249,6 +250,7 @@ def _run_lever_discovery_query(
     jobs_repo: JobsRepository,
     screenshot_name: str | None,
     max_pages_per_query: int,
+    enrich_details: bool,
 ) -> CrawlResult:
     page_limit = max(1, max_pages_per_query)
     next_url: str | None = str(query.start_url)
@@ -287,6 +289,13 @@ def _run_lever_discovery_query(
             break
         next_url = candidate_next_url
 
+    if enrich_details and aggregated_postings:
+        aggregated_postings = _enrich_lever_postings(
+            adapter=adapter,
+            session=session,
+            postings=aggregated_postings,
+        )
+
     result = run_discovery(adapter=adapter, jobs_repo=jobs_repo, parsed_postings=aggregated_postings)
     result.metadata.update(
         {
@@ -295,3 +304,20 @@ def _run_lever_discovery_query(
         }
     )
     return result
+
+
+def _enrich_lever_postings(
+    *,
+    adapter: LeverAdapter,
+    session: BrowserSessionManager,
+    postings: list[JobPosting],
+) -> list[JobPosting]:
+    enriched_postings: list[JobPosting] = []
+    for posting in postings:
+        try:
+            html = fetch_listing_page_html(session=session, url=posting.url.unicode_string())
+            detail = adapter.parse_job_detail(url=posting.url.unicode_string(), html=html)
+            enriched_postings.append(_merge_detail_into_listing(posting, detail.posting))
+        except Exception:
+            enriched_postings.append(posting)
+    return enriched_postings

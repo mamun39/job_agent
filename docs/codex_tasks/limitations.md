@@ -17,15 +17,16 @@ Last updated: 2026-04-10
 - The Playwright fetch helper is generic and only supports URL navigation, page HTML capture, optional screenshots, and simple wait strategies; it does not include site-specific readiness checks.
 - The site adapter abstraction supports read-only discovery/parsing only.
 - Greenhouse support includes listing-page parsing, conservative next-page traversal when standard listing pagination links are exposed, and optional detail-page enrichment using common markup conventions; application form parsing and broader live-site hardening are not implemented.
-- Lever support is limited to listing-page parsing and common markup conventions, with conservative next-page traversal only when standard listing pagination links are exposed; detail-page parsing is not implemented.
+- Lever support includes listing-page parsing, conservative next-page traversal when standard listing pagination links are exposed, and optional detail-page enrichment using common markup conventions; application form parsing and broader live-site hardening are not implemented.
 - Indeed support is limited to listing-page parsing from saved HTML fixtures and common markup conventions; detail-page parsing and live-site hardening are not implemented.
 - LinkedIn support is limited to listing-page parsing from saved HTML fixtures and common public markup conventions; detail-page parsing and live-site hardening are not implemented.
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
 - Discovery query configuration can drive live listing-page discovery for supported adapters from one configured start URL per query, but multi-page traversal is implemented only for Greenhouse and Lever and remains limited by a conservative per-query page cap.
 - Greenhouse detail enrichment is optional and conservative; it performs simple per-job detail fetches only after listing discovery and falls back to listing-derived data when detail fetches or parses fail.
+- Lever detail enrichment is optional and conservative; it performs simple per-job detail fetches only after listing discovery and falls back to listing-derived data when detail fetches or parses fail.
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
 - No login automation, site navigation flows, application submission logic, or resume tailoring logic exists.
-- The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but pagination is limited to conservative Greenhouse and Lever next-page traversal, detail-page collection is only implemented as optional Greenhouse enrichment after listing discovery, and broader multi-step navigation is still not supported.
+- The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but pagination is limited to conservative Greenhouse and Lever next-page traversal, detail-page collection is only implemented as optional Greenhouse and Lever enrichment after listing discovery, and broader multi-step navigation is still not supported.
 - The review workflow now supports both CLI and a minimal local dashboard, but there is still no richer terminal UI, authentication layer, or collaborative multi-user workflow.
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.
 - Review decisions store only the latest explicit state per posting URL; there is no decision history or audit trail.

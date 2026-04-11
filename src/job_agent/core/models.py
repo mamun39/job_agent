@@ -363,3 +363,4 @@ class DiscoveryOptions(BaseModel):
     """Optional deterministic discovery behavior toggles."""
 
     enrich_greenhouse_details: bool = False
+    enrich_lever_details: bool = False

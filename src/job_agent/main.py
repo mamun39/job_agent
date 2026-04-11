@@ -6,9 +6,11 @@ import argparse
 import logging
 from datetime import UTC, datetime
 from collections.abc import Sequence
+from typing import Any
 
 from job_agent.browser.session import BrowserSessionManager
 from job_agent.config import load_settings
+from job_agent.core.models import CrawlResult, DiscoveryOptions
 from job_agent.flows.discover import run_discovery_query
 from job_agent.logging import configure_logging
 from job_agent.core.scoring import rescore_job_posting
@@ -23,6 +25,7 @@ from job_agent.ui.cli import (
     open_job_in_browser,
     parse_job_status,
     parse_review_decision,
+    render_discovery_summary,
     render_job_detail,
     render_jobs_list,
     render_review_decision,
@@ -50,6 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--screenshot",
         action="store_true",
         help="Save one screenshot per query.",
+    )
+    discover_parser.add_argument(
+        "--greenhouse-details",
+        action="store_true",
+        help="Enable optional Greenhouse detail-page enrichment for this run.",
+    )
+    discover_parser.add_argument(
+        "--lever-details",
+        action="store_true",
+        help="Enable optional Lever detail-page enrichment for this run.",
     )
 
     review_parser = subparsers.add_parser(
@@ -133,8 +146,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("No discovery queries configured.")
             return 1
 
+        discovery_options = DiscoveryOptions(
+            enrich_greenhouse_details=(
+                settings.discovery_options.enrich_greenhouse_details or bool(args.greenhouse_details)
+            ),
+            enrich_lever_details=(
+                settings.discovery_options.enrich_lever_details or bool(args.lever_details)
+            ),
+        )
         repo = JobsRepository(init_db(settings.db_path))
         failures = 0
+        successful_results: list[CrawlResult] = []
         session = BrowserSessionManager.from_settings(settings)
         try:
             for query in settings.discovery_queries:
@@ -145,18 +167,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                         session=session,
                         jobs_repo=repo,
                         screenshot_name=screenshot_name,
+                        options=discovery_options,
                     )
+                    successful_results.append(result)
                     status = "warn" if result.metadata["parsed_count"] == 0 else "ok"
-                    print(
-                        f"[{status}] {query.label} ({query.source_site}) parsed={result.metadata['parsed_count']} "
-                        f"stored={result.metadata['stored_count']} inserted={result.metadata['inserted_count']} "
-                        f"updated={result.metadata['updated_count']} duplicates={result.metadata['duplicate_count']}"
-                    )
+                    artifact_hint = _format_debug_artifact_hint(result.metadata.get("debug_artifact_dirs"))
+                    print(f"[{status}] {query.label} ({query.source_site}) {render_discovery_summary(result)}{artifact_hint}")
                 except Exception as exc:  # pragma: no cover - exercised by CLI integration tests
                     failures += 1
-                    print(f"[error] {query.label} ({query.source_site}) {exc}")
+                    artifact_hint = _format_debug_artifact_hint(getattr(exc, "debug_artifact_dir", None))
+                    print(f"[error] {query.label} ({query.source_site}) {exc}{artifact_hint}")
         finally:
             session.close()
+
+        if successful_results:
+            aggregate = _aggregate_discovery_results(successful_results)
+            print(f"[summary] {_render_aggregate_discovery_summary(aggregate)}")
 
         return 1 if failures else 0
 
@@ -350,6 +376,42 @@ def _format_missing_job_message(*, job_id: int | None, url: str | None) -> str:
     if job_id is not None:
         return f"Job not found for id: {job_id}"
     return f"Job not found for url: {url}"
+
+
+def _aggregate_discovery_results(results: Sequence[CrawlResult]) -> dict[str, int]:
+    aggregate = {
+        "queries_attempted": 0,
+        "pages_fetched": 0,
+        "pages_failed": 0,
+        "jobs_parsed": 0,
+        "jobs_inserted": 0,
+        "jobs_updated": 0,
+        "jobs_skipped_duplicates": 0,
+        "detail_pages_fetched": 0,
+        "detail_parse_failures": 0,
+    }
+    for result in results:
+        metadata = result.metadata
+        for key in aggregate:
+            value = metadata.get(key, 0)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                aggregate[key] += int(value)
+    return aggregate
+
+
+def _render_aggregate_discovery_summary(aggregate: dict[str, Any]) -> str:
+    result = CrawlResult(query={}, source_site="aggregate", metadata=aggregate)
+    return render_discovery_summary(result)
+
+
+def _format_debug_artifact_hint(value: object) -> str:
+    if isinstance(value, str) and value:
+        return f" artifacts={value}"
+    if isinstance(value, list) and value:
+        return f" artifacts={value[0]}"
+    return ""
 
 
 if __name__ == "__main__":

@@ -5,8 +5,9 @@ from pathlib import Path
 
 from job_agent.browser.fetch import build_debug_artifact_dir, capture_debug_artifacts
 from job_agent.config import load_settings
-from job_agent.core.models import DiscoveryQuery
+from job_agent.core.models import DiscoveryOptions, DiscoveryQuery
 from job_agent.flows.discover import run_discovery_query
+from job_agent.main import main
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
 
@@ -135,6 +136,85 @@ def test_discovery_debug_artifacts_only_capture_when_enabled(tmp_path, monkeypat
     )
 
     assert (tmp_path / "disabled").exists() is False
+
+
+def test_discovery_result_includes_debug_artifact_directory_metadata(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "artifacts.db"
+    repo = JobsRepository(init_db(db_path))
+    query = DiscoveryQuery(
+        source_site="greenhouse",
+        label="Example engineering",
+        start_url="https://boards.greenhouse.io/exampleco",
+    )
+    listing_html = """
+    <html><body>
+      <section class="level-0">Example Co</section>
+      <div class="opening">
+        <a class="opening" href="/exampleco/jobs/12345">Backend Engineer</a>
+        <span class="location">Remote</span>
+      </div>
+    </body></html>
+    """
+
+    def fake_fetch(**kwargs):
+        if kwargs["url"] == "https://boards.greenhouse.io/exampleco":
+            return listing_html
+        raise RuntimeError("detail failed")
+
+    monkeypatch.setattr("job_agent.flows.discover.fetch_listing_page_html", fake_fetch)
+
+    captured_base_dir = tmp_path / "enabled"
+    monkeypatch.setattr(
+        "job_agent.flows.discover.capture_debug_artifacts",
+        lambda **kwargs: {
+            "html": captured_base_dir / "greenhouse" / "Example_engineering" / "20260410T120000Z" / "saved.html"
+        },
+    )
+
+    result = run_discovery_query(
+        query=query,
+        session=_FakeSession(),
+        jobs_repo=repo,
+        options=DiscoveryOptions(enrich_greenhouse_details=True),
+        debug_artifacts_on_failure=True,
+        debug_artifacts_dir=captured_base_dir,
+    )
+
+    assert result.metadata["debug_artifact_count"] == 1
+    assert result.metadata["debug_artifact_dirs"] == [
+        str(captured_base_dir / "greenhouse" / "Example_engineering" / "20260410T120000Z")
+    ]
+
+
+def test_cli_discover_prints_debug_artifact_hint_on_failure(tmp_path, monkeypatch, capsys) -> None:
+    settings = load_settings()
+    settings.db_path = tmp_path / "cli.db"
+    settings.discovery_queries = [
+        DiscoveryQuery(
+            source_site="lever",
+            label="Lever fail",
+            start_url="https://jobs.lever.co/exampleco",
+        )
+    ]
+
+    def fake_run_discovery_query(**kwargs):
+        exc = RuntimeError("fetch failed")
+        setattr(exc, "debug_artifact_dir", str(tmp_path / "artifacts" / "lever" / "Lever_fail" / "20260410T120000Z"))
+        raise exc
+
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: settings)
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+    monkeypatch.setattr("job_agent.main.run_discovery_query", fake_run_discovery_query)
+    monkeypatch.setattr("job_agent.main.BrowserSessionManager.from_settings", lambda settings: _FakeSession())
+
+    exit_code = main(["discover"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert (
+        "[error] Lever fail (lever) fetch failed artifacts="
+        f"{tmp_path / 'artifacts' / 'lever' / 'Lever_fail' / '20260410T120000Z'}"
+    ) in captured.out
 
 
 def test_load_settings_reads_debug_artifact_config(monkeypatch) -> None:

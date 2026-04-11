@@ -15,7 +15,7 @@ Last updated: 2026-04-10
 - Browser session tests validate wrapper behavior with fakes rather than launching a real browser end to end.
 - Playwright browser installation is environment-local and must be installed on each machine separately.
 - The Playwright fetch helper is generic and only supports URL navigation, page HTML capture, optional screenshots, and simple wait strategies; it does not include site-specific readiness checks.
-- Debug artifact capture is optional and local-only; on failure it can save best-effort screenshots and raw HTML, but it does not provide richer tracing, video capture, or guaranteed artifact completeness.
+- Debug artifact capture is optional and local-only; on failure it can save best-effort screenshots and raw HTML and the discover CLI can surface the artifact directory, but it still does not provide richer tracing, video capture, or guaranteed artifact completeness.
 - The site adapter abstraction supports read-only discovery/parsing only.
 - Greenhouse support includes listing-page parsing, conservative next-page traversal when standard listing pagination links are exposed, and optional detail-page enrichment using common markup conventions; application form parsing and broader live-site hardening are not implemented.
 - Lever support includes listing-page parsing, conservative next-page traversal when standard listing pagination links are exposed, and optional detail-page enrichment using common markup conventions; application form parsing and broader live-site hardening are not implemented.
@@ -28,7 +28,7 @@ Last updated: 2026-04-10
 - No login automation, site navigation flows, application submission logic, review dashboard, or resume tailoring logic exists.
 - No login automation, site navigation flows, application submission logic, or resume tailoring logic exists.
 - The discovery flow supports synchronous live listing-page fetches plus static HTML/pre-parsed input, but pagination is limited to conservative Greenhouse and Lever next-page traversal, detail-page collection is only implemented as optional Greenhouse and Lever enrichment after listing discovery, and broader multi-step navigation is still not supported.
-- Discovery telemetry now tracks local per-run counters for fetch, parse, dedupe, storage, and detail-enrichment outcomes, but the top-level CLI `discover` command still prints its older compact status line instead of the richer summary renderer.
+- Discovery telemetry now tracks local per-run counters for fetch, parse, dedupe, storage, and detail-enrichment outcomes, and the top-level CLI `discover` command now prints the richer per-query and aggregate summary lines.
 - Job lifecycle status now tracks local `active`, `stale`, and `archived` states with timestamp-based stale marking, but archival is not confirmed against remote sites and stale detection depends entirely on local `last_seen_at` maintenance.
 - The review workflow now supports both CLI and a minimal local dashboard, but there is still no richer terminal UI, authentication layer, or collaborative multi-user workflow.
 - Review decisions are now persisted separately, but some review-related filtering still falls back to older job `metadata` fields for backward compatibility.

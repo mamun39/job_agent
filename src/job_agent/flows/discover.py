@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 import logging
 from pathlib import Path
 
@@ -134,6 +135,7 @@ def run_discovery_query(
         settings.debug_artifacts_dir if settings is not None else Path("./data/debug_artifacts")
     )
     telemetry = DiscoveryTelemetry(queries_attempted=1)
+    artifact_timestamp = datetime.now(UTC)
     if isinstance(adapter, GreenhouseAdapter):
         result = _run_greenhouse_discovery_query(
             adapter=adapter,
@@ -146,6 +148,7 @@ def run_discovery_query(
             telemetry=telemetry,
             capture_failure_artifacts=capture_failure_artifacts,
             artifact_dir=artifact_dir,
+            artifact_timestamp=artifact_timestamp,
         )
     elif isinstance(adapter, LeverAdapter):
         result = _run_lever_discovery_query(
@@ -159,6 +162,7 @@ def run_discovery_query(
             telemetry=telemetry,
             capture_failure_artifacts=capture_failure_artifacts,
             artifact_dir=artifact_dir,
+            artifact_timestamp=artifact_timestamp,
         )
     else:
         try:
@@ -170,14 +174,17 @@ def run_discovery_query(
             telemetry.pages_fetched += 1
         except Exception:
             telemetry.pages_failed += 1
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
                 site_name=adapter.site_name,
                 query_label=query.label,
                 artifact_name="listing_fetch_failure",
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                setattr(exc := _current_exception(), "debug_artifact_dir", str(captured_dir))
             raise
         result = _run_discovery_with_telemetry(adapter=adapter, jobs_repo=jobs_repo, html=html, telemetry=telemetry)
         result.metadata.update({"pages_parsed": 1 if result.metadata["parsed_count"] > 0 else 0})
@@ -210,6 +217,7 @@ def _run_greenhouse_discovery_query(
     telemetry: DiscoveryTelemetry,
     capture_failure_artifacts: bool,
     artifact_dir: Path,
+    artifact_timestamp: datetime,
 ) -> CrawlResult:
     page_limit = max(1, max_pages_per_query)
     next_url: str | None = str(query.start_url)
@@ -217,6 +225,7 @@ def _run_greenhouse_discovery_query(
     aggregated_postings: list[JobPosting] = []
     pages_fetched = 0
     pages_parsed = 0
+    artifact_dirs: set[str] = set()
 
     while next_url is not None and pages_fetched < page_limit:
         if next_url in visited_urls:
@@ -234,14 +243,18 @@ def _run_greenhouse_discovery_query(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": next_url, "stage": "listing_fetch"},
             )
             telemetry.pages_failed += 1
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
                 site_name=adapter.site_name,
                 query_label=query.label,
                 artifact_name=f"listing_fetch_failure_page_{pages_fetched + 1}",
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
+                setattr(exc := _current_exception(), "debug_artifact_dir", str(captured_dir))
             if pages_fetched == 0:
                 raise
             LOGGER.warning(
@@ -261,7 +274,7 @@ def _run_greenhouse_discovery_query(
                 "parse_failed",
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "listing_parse", "url": next_url},
             )
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
@@ -269,7 +282,11 @@ def _run_greenhouse_discovery_query(
                 query_label=query.label,
                 artifact_name=f"listing_parse_failure_page_{pages_fetched}",
                 html=html,
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
+                setattr(exc := _current_exception(), "debug_artifact_dir", str(captured_dir))
             raise
         if postings:
             aggregated_postings.extend(postings)
@@ -301,6 +318,8 @@ def _run_greenhouse_discovery_query(
             capture_failure_artifacts=capture_failure_artifacts,
             artifact_dir=artifact_dir,
             query_label=query.label,
+            artifact_timestamp=artifact_timestamp,
+            artifact_dirs=artifact_dirs,
         )
 
     result = _run_discovery_with_telemetry(
@@ -312,6 +331,8 @@ def _run_greenhouse_discovery_query(
     result.metadata.update(
         {
             "pages_parsed": pages_parsed,
+            "debug_artifact_count": len(artifact_dirs),
+            "debug_artifact_dirs": sorted(artifact_dirs),
         }
     )
     return result
@@ -326,6 +347,8 @@ def _enrich_greenhouse_postings(
     capture_failure_artifacts: bool,
     artifact_dir: Path,
     query_label: str,
+    artifact_timestamp: datetime,
+    artifact_dirs: set[str],
 ) -> list[JobPosting]:
     enriched_postings: list[JobPosting] = []
     for posting in postings:
@@ -338,14 +361,17 @@ def _enrich_greenhouse_postings(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": posting.url.unicode_string(), "stage": "detail_fetch"},
             )
             telemetry.detail_parse_failures += 1
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
                 site_name=adapter.site_name,
                 query_label=query_label,
                 artifact_name=f"detail_fetch_failure_{posting.source_job_id or 'job'}",
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
             enriched_postings.append(posting)
             continue
         try:
@@ -357,7 +383,7 @@ def _enrich_greenhouse_postings(
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "detail_parse", "url": posting.url.unicode_string()},
             )
             telemetry.detail_parse_failures += 1
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
@@ -365,7 +391,10 @@ def _enrich_greenhouse_postings(
                 query_label=query_label,
                 artifact_name=f"detail_parse_failure_{posting.source_job_id or 'job'}",
                 html=html,
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
             enriched_postings.append(posting)
     return enriched_postings
 
@@ -415,6 +444,7 @@ def _run_lever_discovery_query(
     telemetry: DiscoveryTelemetry,
     capture_failure_artifacts: bool,
     artifact_dir: Path,
+    artifact_timestamp: datetime,
 ) -> CrawlResult:
     page_limit = max(1, max_pages_per_query)
     next_url: str | None = str(query.start_url)
@@ -422,6 +452,7 @@ def _run_lever_discovery_query(
     aggregated_postings: list[JobPosting] = []
     pages_fetched = 0
     pages_parsed = 0
+    artifact_dirs: set[str] = set()
 
     while next_url is not None and pages_fetched < page_limit:
         if next_url in visited_urls:
@@ -439,14 +470,18 @@ def _run_lever_discovery_query(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": next_url, "stage": "listing_fetch"},
             )
             telemetry.pages_failed += 1
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
                 site_name=adapter.site_name,
                 query_label=query.label,
                 artifact_name=f"listing_fetch_failure_page_{pages_fetched + 1}",
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
+                setattr(exc := _current_exception(), "debug_artifact_dir", str(captured_dir))
             if pages_fetched == 0:
                 raise
             LOGGER.warning(
@@ -466,7 +501,7 @@ def _run_lever_discovery_query(
                 "parse_failed",
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "listing_parse", "url": next_url},
             )
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
@@ -474,7 +509,11 @@ def _run_lever_discovery_query(
                 query_label=query.label,
                 artifact_name=f"listing_parse_failure_page_{pages_fetched}",
                 html=html,
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
+                setattr(exc := _current_exception(), "debug_artifact_dir", str(captured_dir))
             raise
         if postings:
             aggregated_postings.extend(postings)
@@ -506,6 +545,8 @@ def _run_lever_discovery_query(
             capture_failure_artifacts=capture_failure_artifacts,
             artifact_dir=artifact_dir,
             query_label=query.label,
+            artifact_timestamp=artifact_timestamp,
+            artifact_dirs=artifact_dirs,
         )
 
     result = _run_discovery_with_telemetry(
@@ -517,6 +558,8 @@ def _run_lever_discovery_query(
     result.metadata.update(
         {
             "pages_parsed": pages_parsed,
+            "debug_artifact_count": len(artifact_dirs),
+            "debug_artifact_dirs": sorted(artifact_dirs),
         }
     )
     return result
@@ -531,6 +574,8 @@ def _enrich_lever_postings(
     capture_failure_artifacts: bool,
     artifact_dir: Path,
     query_label: str,
+    artifact_timestamp: datetime,
+    artifact_dirs: set[str],
 ) -> list[JobPosting]:
     enriched_postings: list[JobPosting] = []
     for posting in postings:
@@ -543,14 +588,17 @@ def _enrich_lever_postings(
                 extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": posting.url.unicode_string(), "stage": "detail_fetch"},
             )
             telemetry.detail_parse_failures += 1
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
                 site_name=adapter.site_name,
                 query_label=query_label,
                 artifact_name=f"detail_fetch_failure_{posting.source_job_id or 'job'}",
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
             enriched_postings.append(posting)
             continue
         try:
@@ -562,7 +610,7 @@ def _enrich_lever_postings(
                 extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "detail_parse", "url": posting.url.unicode_string()},
             )
             telemetry.detail_parse_failures += 1
-            _capture_failure_artifacts(
+            captured_dir = _capture_failure_artifacts(
                 enabled=capture_failure_artifacts,
                 session=session,
                 artifact_dir=artifact_dir,
@@ -570,7 +618,10 @@ def _enrich_lever_postings(
                 query_label=query_label,
                 artifact_name=f"detail_parse_failure_{posting.source_job_id or 'job'}",
                 html=html,
+                artifact_timestamp=artifact_timestamp,
             )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
             enriched_postings.append(posting)
     return enriched_postings
 
@@ -584,14 +635,26 @@ def _capture_failure_artifacts(
     query_label: str,
     artifact_name: str,
     html: str | None = None,
-) -> None:
+    artifact_timestamp: datetime,
+) -> Path | None:
     if not enabled:
-        return
-    capture_debug_artifacts(
+        return None
+    artifacts = capture_debug_artifacts(
         session=session,
         base_dir=artifact_dir,
         site_name=site_name,
         query_label=query_label,
         artifact_name=artifact_name,
         html=html,
+        timestamp=artifact_timestamp,
     )
+    if not artifacts:
+        return None
+    return next(iter(artifacts.values())).parent
+
+
+def _current_exception() -> Exception:
+    exc = __import__("sys").exc_info()[1]
+    if isinstance(exc, Exception):
+        return exc
+    return RuntimeError("unknown discovery failure")

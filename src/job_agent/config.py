@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import os
@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from job_agent.core.models import DiscoveryQuery
+from job_agent.core.models import DiscoveryOptions, DiscoveryQuery
 
 @dataclass(slots=True)
 class Settings:
@@ -26,6 +26,7 @@ class Settings:
     browser_headless: bool = False
     max_pages_per_query: int = 1
     debug_artifacts_on_failure: bool = False
+    discovery_options: DiscoveryOptions = field(default_factory=DiscoveryOptions)
     discovery_queries: list[DiscoveryQuery] | None = None
 
 
@@ -71,6 +72,7 @@ def load_settings() -> Settings:
         browser_headless=_parse_bool(os.getenv("JOB_AGENT_BROWSER_HEADLESS", "false")),
         max_pages_per_query=load_max_pages_per_query(),
         debug_artifacts_on_failure=_parse_bool(os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE", "false")),
+        discovery_options=load_discovery_options(),
         discovery_queries=load_discovery_queries(),
     )
 
@@ -85,6 +87,15 @@ def load_max_pages_per_query() -> int:
     return _parse_positive_int(
         os.getenv("JOB_AGENT_MAX_PAGES_PER_QUERY", "1"),
         env_var="JOB_AGENT_MAX_PAGES_PER_QUERY",
+    )
+
+
+def load_discovery_options() -> DiscoveryOptions:
+    """Load optional deterministic discovery behaviors from environment variables."""
+    load_dotenv()
+    return DiscoveryOptions(
+        enrich_greenhouse_details=_parse_bool(os.getenv("JOB_AGENT_ENRICH_GREENHOUSE_DETAILS", "false")),
+        enrich_lever_details=_parse_bool(os.getenv("JOB_AGENT_ENRICH_LEVER_DETAILS", "false")),
     )
 
 

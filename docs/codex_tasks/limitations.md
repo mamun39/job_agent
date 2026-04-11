@@ -22,7 +22,7 @@ Last updated: 2026-04-10
 - Indeed support is limited to listing-page parsing from saved HTML fixtures and common markup conventions; detail-page parsing and live-site hardening are not implemented.
 - LinkedIn support is limited to listing-page parsing from saved HTML fixtures and common public markup conventions; detail-page parsing and live-site hardening are not implemented.
 - Discovery query configuration can be loaded from JSON directly; YAML is supported only when `PyYAML` is installed locally.
-- Structured `SearchIntent` and `SearchPlan` models now exist for prompt-derived search workflows, but prompt parsing, plan generation, and execution wiring are not implemented yet.
+- Structured `SearchIntent` and `SearchPlan` models now exist for prompt-derived search workflows, and a conservative rule-based prompt parser can extract simple explicit constraints into `SearchIntent`, but deeper semantic understanding, plan generation, and execution wiring are not implemented yet.
 - Discovery query configuration can drive live listing-page discovery for supported adapters from one configured start URL per query, but multi-page traversal is implemented only for Greenhouse and Lever and remains limited by a conservative per-query page cap.
 - Greenhouse detail enrichment is optional and conservative; it performs simple per-job detail fetches only after listing discovery and falls back to listing-derived data when detail fetches or parses fail.
 - Lever detail enrichment is optional and conservative; it performs simple per-job detail fetches only after listing discovery and falls back to listing-derived data when detail fetches or parses fail.

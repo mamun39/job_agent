@@ -92,18 +92,27 @@ def _check_remote_constraints(job: JobPosting, constraints: SearchConstraint) ->
         return []
     if constraints.remote_preference is RemotePreference.REMOTE_PREFERRED:
         return []
+    if constraints.remote_preference is RemotePreference.ONSITE_PREFERRED:
+        return []
     if constraints.remote_preference is RemotePreference.ONSITE_OK:
         return []
 
     if job.remote_status.value == "unknown":
-        if constraints.remote_preference in {RemotePreference.REMOTE_ONLY, RemotePreference.HYBRID_PREFERRED}:
+        if constraints.remote_preference in {
+            RemotePreference.REMOTE_ONLY,
+            RemotePreference.HYBRID_PREFERRED,
+            RemotePreference.HYBRID_ONLY,
+            RemotePreference.ONSITE_ONLY,
+        }:
             return [f"Job remote status is unknown and cannot satisfy explicit requirement '{constraints.remote_preference.value}'"]
         return []
 
     if constraints.remote_preference is RemotePreference.REMOTE_ONLY and job.remote_status.value != "remote":
         return [f"Job remote status '{job.remote_status.value}' did not satisfy required remote-only constraint"]
-    if constraints.remote_preference is RemotePreference.HYBRID_PREFERRED and job.remote_status.value != "hybrid":
-        return [f"Job remote status '{job.remote_status.value}' did not satisfy required hybrid constraint"]
+    if constraints.remote_preference is RemotePreference.HYBRID_ONLY and job.remote_status.value != "hybrid":
+        return [f"Job remote status '{job.remote_status.value}' did not satisfy required hybrid-only constraint"]
+    if constraints.remote_preference is RemotePreference.ONSITE_ONLY and job.remote_status.value != "onsite":
+        return [f"Job remote status '{job.remote_status.value}' did not satisfy required onsite-only constraint"]
     return []
 
 

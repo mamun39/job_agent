@@ -67,7 +67,10 @@ class RemotePreference(StrEnum):
     UNSPECIFIED = "unspecified"
     REMOTE_ONLY = "remote_only"
     REMOTE_PREFERRED = "remote_preferred"
+    HYBRID_ONLY = "hybrid_only"
     HYBRID_PREFERRED = "hybrid_preferred"
+    ONSITE_ONLY = "onsite_only"
+    ONSITE_PREFERRED = "onsite_preferred"
     ONSITE_OK = "onsite_ok"
 
 
@@ -246,9 +249,13 @@ class SearchConstraint(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     target_titles: list[str] = Field(default_factory=list)
+    preferred_titles: list[str] = Field(default_factory=list)
     include_keywords: list[str] = Field(default_factory=list)
+    preferred_keywords: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
+    excluded_role_categories: list[str] = Field(default_factory=list)
     location_constraints: list[str] = Field(default_factory=list)
+    preferred_locations: list[str] = Field(default_factory=list)
     remote_preference: RemotePreference = RemotePreference.UNSPECIFIED
     seniority_preferences: list[SeniorityLevel] = Field(default_factory=list)
     source_site_preferences: list[str] = Field(default_factory=list)
@@ -258,9 +265,13 @@ class SearchConstraint(BaseModel):
 
     @field_validator(
         "target_titles",
+        "preferred_titles",
         "include_keywords",
+        "preferred_keywords",
         "exclude_keywords",
+        "excluded_role_categories",
         "location_constraints",
+        "preferred_locations",
         "include_companies",
         "exclude_companies",
         mode="before",
@@ -283,6 +294,8 @@ class SearchIntent(BaseModel):
     prompt_text: str
     constraints: SearchConstraint = Field(default_factory=SearchConstraint)
     summary: str | None = None
+    parser_notes: list[str] = Field(default_factory=list)
+    unresolved_fragments: list[str] = Field(default_factory=list)
 
     @field_validator("prompt_text", "summary", mode="before")
     @classmethod
@@ -290,6 +303,11 @@ class SearchIntent(BaseModel):
         if value is None:
             return None
         return _normalize_text(value)
+
+    @field_validator("parser_notes", "unresolved_fragments", mode="before")
+    @classmethod
+    def _normalize_search_intent_lists(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
 
 
 class SearchPlanQuery(BaseModel):
@@ -302,9 +320,12 @@ class SearchPlanQuery(BaseModel):
     company_name: str | None = None
     board_url: HttpUrl | None = None
     target_titles: list[str] = Field(default_factory=list)
+    preferred_titles: list[str] = Field(default_factory=list)
     include_keywords: list[str] = Field(default_factory=list)
+    preferred_keywords: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
     location_constraints: list[str] = Field(default_factory=list)
+    preferred_locations: list[str] = Field(default_factory=list)
     remote_preference: RemotePreference = RemotePreference.UNSPECIFIED
     seniority_preferences: list[SeniorityLevel] = Field(default_factory=list)
     freshness_window_days: int | None = Field(default=None, ge=1, le=365)
@@ -326,9 +347,12 @@ class SearchPlanQuery(BaseModel):
 
     @field_validator(
         "target_titles",
+        "preferred_titles",
         "include_keywords",
+        "preferred_keywords",
         "exclude_keywords",
         "location_constraints",
+        "preferred_locations",
         "include_companies",
         "exclude_companies",
         "notes",

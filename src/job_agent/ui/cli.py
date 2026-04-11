@@ -194,30 +194,42 @@ def render_prompt_search_summary(result: PromptSearchResult) -> str:
     highlights: list[str] = []
     if constraints.target_titles:
         highlights.append(f"titles={', '.join(constraints.target_titles)}")
+    if constraints.preferred_titles:
+        highlights.append(f"preferred_titles={', '.join(constraints.preferred_titles)}")
     if constraints.include_keywords:
         highlights.append(f"include={', '.join(constraints.include_keywords)}")
+    if constraints.preferred_keywords:
+        highlights.append(f"prefer={', '.join(constraints.preferred_keywords)}")
     if constraints.exclude_keywords:
         highlights.append(f"exclude={', '.join(constraints.exclude_keywords)}")
+    if constraints.excluded_role_categories:
+        highlights.append(f"exclude_roles={', '.join(constraints.excluded_role_categories)}")
     if constraints.location_constraints:
         highlights.append(f"locations={', '.join(constraints.location_constraints)}")
+    if constraints.preferred_locations:
+        highlights.append(f"preferred_locations={', '.join(constraints.preferred_locations)}")
     if constraints.include_companies:
         highlights.append(f"companies={', '.join(constraints.include_companies)}")
+    if constraints.exclude_companies:
+        highlights.append(f"exclude_companies={', '.join(constraints.exclude_companies)}")
     if constraints.remote_preference.value != "unspecified":
         highlights.append(f"remote={constraints.remote_preference.value}")
     if constraints.freshness_window_days is not None:
         highlights.append(f"freshness={constraints.freshness_window_days}d")
     if not highlights:
         highlights.append("no explicit constraints parsed")
-
-    return "\n".join(
-        [
-            f"Intent: {' | '.join(highlights)}",
-            (
-                f"Summary: boards={len(result.plan.queries)} discovered={result.discovered_jobs_count} "
-                f"matched={len(result.matched_jobs)} rejected={len(result.rejected_jobs)}"
-            ),
-        ]
-    )
+    lines = [
+        f"Intent: {' | '.join(highlights)}",
+        (
+            f"Summary: boards={len(result.plan.queries)} discovered={result.discovered_jobs_count} "
+            f"matched={len(result.matched_jobs)} rejected={len(result.rejected_jobs)}"
+        ),
+    ]
+    if result.intent.parser_notes:
+        lines.append(f"Parser Notes: {' | '.join(result.intent.parser_notes)}")
+    if result.intent.unresolved_fragments:
+        lines.append(f"Unresolved: {' | '.join(result.intent.unresolved_fragments)}")
+    return "\n".join(lines)
 
 
 def render_matched_jobs(matched_jobs: list[MatchedJobMatch]) -> str:

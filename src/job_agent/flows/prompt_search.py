@@ -96,9 +96,16 @@ def _plan_query_to_discovery_query(plan_query: SearchPlanQuery) -> DiscoveryQuer
         source_site=plan_query.source_site,
         label=plan_query.label,
         start_url=plan_query.board_url,
-        include_keywords=list(dict.fromkeys(list(plan_query.include_keywords) + list(plan_query.target_titles))),
+        include_keywords=list(
+            dict.fromkeys(
+                list(plan_query.include_keywords)
+                + list(plan_query.preferred_keywords)
+                + list(plan_query.target_titles)
+                + list(plan_query.preferred_titles)
+            )
+        ),
         exclude_keywords=list(plan_query.exclude_keywords),
-        location_hints=list(plan_query.location_constraints),
+        location_hints=list(dict.fromkeys(list(plan_query.location_constraints) + list(plan_query.preferred_locations))),
     )
 
 

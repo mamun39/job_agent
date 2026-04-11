@@ -92,7 +92,10 @@ def select_board_registry_entries(
             f"No board registry entries matched companies [{requested_companies}] for supported sources [{requested_sites}]."
         )
 
-    filtered = _filter_by_locations(candidates, constraints.location_constraints)
+    filtered = _filter_by_locations(
+        candidates,
+        list(constraints.location_constraints) + list(constraints.preferred_locations),
+    )
     if filtered:
         candidates = filtered
 
@@ -127,7 +130,9 @@ def _filter_by_tags(candidates: list[BoardRegistryEntry], constraints: SearchCon
         _normalize_match_key(value)
         for value in (
             list(constraints.include_keywords)
+            + list(constraints.preferred_keywords)
             + list(constraints.target_titles)
+            + list(constraints.preferred_titles)
             + [level.value for level in constraints.seniority_preferences]
         )
     }

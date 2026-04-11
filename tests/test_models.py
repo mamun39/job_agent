@@ -129,9 +129,13 @@ def test_crawl_result_requires_error_message_on_failure() -> None:
 def test_search_constraint_normalizes_lists_and_optional_defaults() -> None:
     constraints = SearchConstraint(
         target_titles=" Senior Python Engineer ",
+        preferred_titles=" Platform Engineer ",
         include_keywords=[" backend ", " distributed systems "],
+        preferred_keywords=" observability ",
         exclude_keywords=None,
+        excluded_role_categories=" recruiter ",
         location_constraints=" Remote - Canada ",
+        preferred_locations=" Toronto ",
         remote_preference="remote_preferred",
         seniority_preferences=["senior", "staff"],
         source_site_preferences=[" Greenhouse ", "lever"],
@@ -139,9 +143,13 @@ def test_search_constraint_normalizes_lists_and_optional_defaults() -> None:
     )
 
     assert constraints.target_titles == ["Senior Python Engineer"]
+    assert constraints.preferred_titles == ["Platform Engineer"]
     assert constraints.include_keywords == ["backend", "distributed systems"]
+    assert constraints.preferred_keywords == ["observability"]
     assert constraints.exclude_keywords == []
+    assert constraints.excluded_role_categories == ["recruiter"]
     assert constraints.location_constraints == ["Remote - Canada"]
+    assert constraints.preferred_locations == ["Toronto"]
     assert constraints.remote_preference is RemotePreference.REMOTE_PREFERRED
     assert constraints.seniority_preferences == [SeniorityLevel.SENIOR, SeniorityLevel.STAFF]
     assert constraints.source_site_preferences == ["greenhouse", "lever"]
@@ -156,15 +164,21 @@ def test_search_intent_accepts_realistic_prompt_payload() -> None:
         summary="Senior remote-leaning backend search in Canada.",
         constraints={
             "target_titles": ["Backend Engineer", "Platform Engineer"],
+            "preferred_titles": ["Site Reliability Engineer"],
             "include_keywords": ["python", "api"],
+            "preferred_keywords": ["observability"],
             "exclude_keywords": ["crypto"],
+            "excluded_role_categories": ["recruiter"],
             "location_constraints": ["Canada", "Remote"],
+            "preferred_locations": ["Toronto"],
             "remote_preference": "remote_only",
             "seniority_preferences": ["senior"],
             "source_site_preferences": ["Greenhouse", "Lever"],
             "freshness_window_days": 14,
             "exclude_companies": ["Speculative Labs"],
         },
+        parser_notes=["must-have titles: Backend Engineer, Platform Engineer"],
+        unresolved_fragments=["something interesting"],
     )
 
     assert intent.prompt_text.startswith("Find senior backend Python roles")
@@ -172,6 +186,8 @@ def test_search_intent_accepts_realistic_prompt_payload() -> None:
     assert intent.constraints.remote_preference is RemotePreference.REMOTE_ONLY
     assert intent.constraints.freshness_window_days == 14
     assert intent.constraints.source_site_preferences == ["greenhouse", "lever"]
+    assert intent.parser_notes == ["must-have titles: Backend Engineer, Platform Engineer"]
+    assert intent.unresolved_fragments == ["something interesting"]
 
 
 def test_search_plan_validates_supported_executable_queries() -> None:

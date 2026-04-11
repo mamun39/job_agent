@@ -57,17 +57,26 @@ def build_scoring_criteria_from_constraints(constraints: SearchConstraint) -> Sc
     preferred_remote_statuses: list[RemoteStatus] = []
     if constraints.remote_preference in {RemotePreference.REMOTE_ONLY, RemotePreference.REMOTE_PREFERRED}:
         preferred_remote_statuses = [RemoteStatus.REMOTE]
-    elif constraints.remote_preference is RemotePreference.HYBRID_PREFERRED:
+    elif constraints.remote_preference in {RemotePreference.HYBRID_ONLY, RemotePreference.HYBRID_PREFERRED}:
         preferred_remote_statuses = [RemoteStatus.HYBRID]
+    elif constraints.remote_preference in {RemotePreference.ONSITE_ONLY, RemotePreference.ONSITE_PREFERRED}:
+        preferred_remote_statuses = [RemoteStatus.ONSITE]
 
     return ScoringCriteria(
         include_title_keywords=_dedupe_casefolded(
-            list(constraints.include_keywords) + list(constraints.target_titles)
+            list(constraints.include_keywords)
+            + list(constraints.preferred_keywords)
+            + list(constraints.target_titles)
+            + list(constraints.preferred_titles)
         ),
-        include_description_keywords=_dedupe_casefolded(list(constraints.include_keywords)),
+        include_description_keywords=_dedupe_casefolded(
+            list(constraints.include_keywords) + list(constraints.preferred_keywords)
+        ),
         include_company_keywords=_dedupe_casefolded(list(constraints.include_companies)),
         exclude_company_keywords=_dedupe_casefolded(list(constraints.exclude_companies)),
-        include_location_keywords=_dedupe_casefolded(list(constraints.location_constraints)),
+        include_location_keywords=_dedupe_casefolded(
+            list(constraints.location_constraints) + list(constraints.preferred_locations)
+        ),
         preferred_remote_statuses=preferred_remote_statuses,
         preferred_seniority_levels=list(constraints.seniority_preferences),
     )

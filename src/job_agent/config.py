@@ -25,6 +25,9 @@ class Settings:
     browser_screenshot_dir: Path = Path("./data/screenshots")
     debug_artifacts_dir: Path = Path("./data/debug_artifacts")
     browser_headless: bool = False
+    browser_auth_mode: str | None = None
+    browser_auth_profile_dir: Path | None = None
+    browser_auth_cdp_url: str | None = None
     max_pages_per_query: int = 1
     debug_artifacts_on_failure: bool = False
     discovery_options: DiscoveryOptions = field(default_factory=DiscoveryOptions)
@@ -63,6 +66,9 @@ def load_settings() -> Settings:
     debug_artifacts_dir = Path(
         os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_DIR", data_dir / "debug_artifacts")
     )
+    browser_auth_mode = load_browser_auth_mode()
+    browser_auth_profile_dir = _load_optional_path("JOB_AGENT_BROWSER_AUTH_PROFILE_DIR")
+    browser_auth_cdp_url = _load_optional_text("JOB_AGENT_BROWSER_AUTH_CDP_URL")
     return Settings(
         env=os.getenv("JOB_AGENT_ENV", "development"),
         log_level=os.getenv("JOB_AGENT_LOG_LEVEL", "INFO").upper(),
@@ -72,6 +78,9 @@ def load_settings() -> Settings:
         browser_screenshot_dir=browser_screenshot_dir,
         debug_artifacts_dir=debug_artifacts_dir,
         browser_headless=_parse_bool(os.getenv("JOB_AGENT_BROWSER_HEADLESS", "false")),
+        browser_auth_mode=browser_auth_mode,
+        browser_auth_profile_dir=browser_auth_profile_dir,
+        browser_auth_cdp_url=browser_auth_cdp_url,
         max_pages_per_query=load_max_pages_per_query(),
         debug_artifacts_on_failure=_parse_bool(os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE", "false")),
         discovery_options=load_discovery_options(),
@@ -82,6 +91,33 @@ def load_settings() -> Settings:
 
 def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_optional_text(env_var: str) -> str | None:
+    value = os.getenv(env_var)
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _load_optional_path(env_var: str) -> Path | None:
+    value = _load_optional_text(env_var)
+    if value is None:
+        return None
+    return Path(value)
+
+
+def load_browser_auth_mode() -> str | None:
+    """Load the optional authenticated local-browser reuse mode."""
+    load_dotenv()
+    value = _load_optional_text("JOB_AGENT_BROWSER_AUTH_MODE")
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized not in {"profile", "attach"}:
+        raise ValueError("JOB_AGENT_BROWSER_AUTH_MODE must be one of: profile, attach")
+    return normalized
 
 
 def load_max_pages_per_query() -> int:

@@ -208,3 +208,15 @@ def test_search_command_can_export_matched_results_to_csv(monkeypatch, tmp_path,
     assert len(rows) == 1
     assert rows[0]["title"] == "AI Security Engineer"
     assert rows[0]["company"] == "Example Co"
+
+
+def test_search_command_validates_authenticated_attach_requirements(monkeypatch, tmp_path, capsys) -> None:
+    db_path = tmp_path / "search.db"
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+
+    exit_code = main(["search", "Find AI security roles in Canada", "--auth-browser", "attach"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "requires --auth-browser-cdp-url" in captured.out

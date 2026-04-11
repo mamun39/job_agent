@@ -207,3 +207,25 @@ def test_cli_discover_uses_configured_detail_enrichment_options(tmp_path, monkey
         enrich_greenhouse_details=False,
         enrich_lever_details=True,
     )
+
+
+def test_cli_discover_requires_explicit_auth_browser_mode_for_override_paths(tmp_path, monkeypatch, capsys) -> None:
+    settings = Settings(
+        db_path=tmp_path / "cli.db",
+        discovery_queries=[
+            DiscoveryQuery(
+                source_site="greenhouse",
+                label="Greenhouse auth",
+                start_url="https://boards.greenhouse.io/exampleco",
+            )
+        ],
+    )
+
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: settings)
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+
+    exit_code = main(["discover", "--auth-browser-profile-dir", str(tmp_path / "profile")])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Provide --auth-browser profile or --auth-browser attach" in captured.out

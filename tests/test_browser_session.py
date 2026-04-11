@@ -14,6 +14,9 @@ class _FakePage:
         Path(path).write_bytes(b"fake-image")
         self.screenshot_paths.append(path)
 
+    def content(self) -> str:
+        return "<html></html>"
+
 
 class _FakeContext:
     def __init__(self, pages: list[_FakePage] | None = None) -> None:
@@ -35,10 +38,26 @@ class _FakeChromium:
     def __init__(self, context: _FakeContext) -> None:
         self.context = context
         self.calls: list[tuple[str, bool]] = []
+        self.cdp_calls: list[str] = []
+        self.browser: _FakeBrowser | None = None
 
     def launch_persistent_context(self, *, user_data_dir: str, headless: bool) -> _FakeContext:
         self.calls.append((user_data_dir, headless))
         return self.context
+
+    def connect_over_cdp(self, url: str) -> "_FakeBrowser":
+        self.cdp_calls.append(url)
+        assert self.browser is not None
+        return self.browser
+
+
+class _FakeBrowser:
+    def __init__(self, contexts: list[_FakeContext]) -> None:
+        self.contexts = contexts
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class _FakePlaywright:
@@ -149,4 +168,74 @@ def test_close_is_safe_and_idempotent(tmp_path, monkeypatch) -> None:
     session.close()
 
     assert fake_context.closed is True
+    assert fake_playwright.stopped is True
+
+
+def test_authenticated_profile_mode_requires_existing_profile_dir(tmp_path, monkeypatch) -> None:
+    fake_context = _FakeContext()
+    fake_chromium = _FakeChromium(fake_context)
+    fake_playwright = _FakePlaywright(fake_chromium)
+    fake_factory = _FakeSyncPlaywrightFactory(fake_playwright)
+    monkeypatch.setattr("job_agent.browser.session.sync_playwright", lambda: fake_factory)
+
+    session = BrowserSessionManager(
+        user_data_dir=tmp_path / "profile",
+        screenshot_dir=tmp_path / "shots",
+        auth_mode="profile",
+        auth_profile_dir=tmp_path / "missing-profile",
+    )
+
+    try:
+        session.launch()
+    except RuntimeError as exc:
+        assert "does not exist" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected RuntimeError for missing authenticated profile directory")
+
+
+def test_authenticated_attach_mode_requires_cdp_url(tmp_path, monkeypatch) -> None:
+    fake_context = _FakeContext()
+    fake_chromium = _FakeChromium(fake_context)
+    fake_playwright = _FakePlaywright(fake_chromium)
+    fake_factory = _FakeSyncPlaywrightFactory(fake_playwright)
+    monkeypatch.setattr("job_agent.browser.session.sync_playwright", lambda: fake_factory)
+
+    session = BrowserSessionManager(
+        user_data_dir=tmp_path / "profile",
+        screenshot_dir=tmp_path / "shots",
+        auth_mode="attach",
+    )
+
+    try:
+        session.launch()
+    except RuntimeError as exc:
+        assert "requires a Chromium CDP URL" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected RuntimeError for missing CDP URL")
+
+
+def test_authenticated_attach_mode_reuses_existing_browser_context(tmp_path, monkeypatch) -> None:
+    attached_context = _FakeContext(pages=[_FakePage()])
+    fake_browser = _FakeBrowser([attached_context])
+    fake_context = _FakeContext()
+    fake_chromium = _FakeChromium(fake_context)
+    fake_chromium.browser = fake_browser
+    fake_playwright = _FakePlaywright(fake_chromium)
+    fake_factory = _FakeSyncPlaywrightFactory(fake_playwright)
+    monkeypatch.setattr("job_agent.browser.session.sync_playwright", lambda: fake_factory)
+
+    session = BrowserSessionManager(
+        user_data_dir=tmp_path / "profile",
+        screenshot_dir=tmp_path / "shots",
+        auth_mode="attach",
+        auth_cdp_url="http://127.0.0.1:9222",
+    )
+
+    context = session.launch()
+    session.close()
+
+    assert context is attached_context
+    assert fake_chromium.calls == []
+    assert fake_chromium.cdp_calls == ["http://127.0.0.1:9222"]
+    assert fake_browser.closed is False
     assert fake_playwright.stopped is True

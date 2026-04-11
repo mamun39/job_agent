@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from job_agent.config import load_board_registry, load_discovery_queries, load_settings
+from job_agent.config import load_board_registry, load_browser_auth_mode, load_discovery_queries, load_settings
 
 
 def test_load_discovery_queries_from_env_json(monkeypatch) -> None:
@@ -144,3 +144,25 @@ def test_load_board_registry_from_yaml_file(tmp_path, monkeypatch) -> None:
     assert len(registry) == 1
     assert registry[0].source_site == "lever"
     assert registry[0].location_hints == ["Remote"]
+
+
+def test_load_settings_reads_authenticated_browser_config(tmp_path, monkeypatch) -> None:
+    profile_dir = tmp_path / "auth-profile"
+    monkeypatch.setenv("JOB_AGENT_BROWSER_AUTH_MODE", "profile")
+    monkeypatch.setenv("JOB_AGENT_BROWSER_AUTH_PROFILE_DIR", str(profile_dir))
+    monkeypatch.delenv("JOB_AGENT_BROWSER_AUTH_CDP_URL", raising=False)
+
+    settings = load_settings()
+
+    assert settings.browser_auth_mode == "profile"
+    assert settings.browser_auth_profile_dir == profile_dir
+    assert settings.browser_auth_cdp_url is None
+
+
+def test_invalid_authenticated_browser_mode_fails_clearly(monkeypatch) -> None:
+    monkeypatch.setenv("JOB_AGENT_BROWSER_AUTH_MODE", "cookies")
+
+    with pytest.raises(ValueError) as exc_info:
+        load_browser_auth_mode()
+
+    assert "must be one of: profile, attach" in str(exc_info.value)

@@ -73,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable optional Lever detail-page enrichment for this run.",
     )
+    _add_authenticated_browser_options(discover_parser)
 
     search_parser = subparsers.add_parser(
         "search",
@@ -93,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Persist newly matched jobs into the configured database.",
     )
+    _add_authenticated_browser_options(search_parser)
 
     review_parser = subparsers.add_parser(
         "review",
@@ -191,7 +193,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo = JobsRepository(init_db(settings.db_path))
         failures = 0
         successful_results: list[CrawlResult] = []
-        session = BrowserSessionManager.from_settings(settings)
+        try:
+            session = _build_browser_session_manager(settings, args=args)
+        except ValueError as exc:
+            print(str(exc))
+            return 1
         try:
             for query in settings.discovery_queries:
                 try:
@@ -237,7 +243,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             saved_search_repo.save_search_prompt(name=args.save_search, raw_prompt_text=prompt_text, now=datetime.now(UTC))
             print(format_saved_search_summary(name=args.save_search))
 
-        session = BrowserSessionManager.from_settings(settings)
+        try:
+            session = _build_browser_session_manager(settings, args=args)
+        except ValueError as exc:
+            print(str(exc))
+            return 1
         ephemeral_repo = JobsRepository(init_db(":memory:"))
         try:
             try:
@@ -434,6 +444,22 @@ def _add_review_filters(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_authenticated_browser_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--auth-browser",
+        choices=["profile", "attach"],
+        help="Opt in to authenticated local Chromium session reuse via a persistent profile or CDP attach.",
+    )
+    parser.add_argument(
+        "--auth-browser-profile-dir",
+        help="Existing Chromium profile directory to reuse in authenticated profile mode.",
+    )
+    parser.add_argument(
+        "--auth-browser-cdp-url",
+        help="Existing Chromium remote-debugging CDP URL to attach to in authenticated attach mode.",
+    )
+
+
 def _add_review_target(parser: argparse.ArgumentParser) -> None:
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--id", type=int, help="Stored job database id.")
@@ -464,6 +490,35 @@ def _format_missing_job_message(*, job_id: int | None, url: str | None) -> str:
     if job_id is not None:
         return f"Job not found for id: {job_id}"
     return f"Job not found for url: {url}"
+
+
+def _build_browser_session_manager(settings: Any, *, args: Any) -> BrowserSessionManager:
+    auth_mode = args.auth_browser or settings.browser_auth_mode
+    auth_profile_dir = Path(args.auth_browser_profile_dir) if args.auth_browser_profile_dir else settings.browser_auth_profile_dir
+    auth_cdp_url = args.auth_browser_cdp_url or settings.browser_auth_cdp_url
+    if auth_mode == "profile" and auth_profile_dir is None:
+        raise ValueError(
+            "Authenticated browser mode 'profile' requires --auth-browser-profile-dir "
+            "or JOB_AGENT_BROWSER_AUTH_PROFILE_DIR."
+        )
+    if auth_mode == "attach" and auth_cdp_url is None:
+        raise ValueError(
+            "Authenticated browser mode 'attach' requires --auth-browser-cdp-url "
+            "or JOB_AGENT_BROWSER_AUTH_CDP_URL."
+        )
+    if auth_mode is None and (args.auth_browser_profile_dir or args.auth_browser_cdp_url):
+        raise ValueError(
+            "Provide --auth-browser profile or --auth-browser attach when passing "
+            "authenticated browser reuse options."
+        )
+    return BrowserSessionManager(
+        user_data_dir=settings.browser_user_data_dir,
+        screenshot_dir=settings.browser_screenshot_dir,
+        headless=settings.browser_headless,
+        auth_mode=auth_mode,
+        auth_profile_dir=auth_profile_dir,
+        auth_cdp_url=auth_cdp_url,
+    )
 
 
 def _resolve_search_prompt(

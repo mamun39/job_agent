@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 import webbrowser
 
-from job_agent.core.models import CrawlResult, JobPosting, ReviewDecision, ReviewStatus
+from job_agent.core.models import CrawlResult, JobPosting, ReviewDecision, ReviewStatus, ScoreResult
 from job_agent.llm.summarizer import JobSummarizer, summarize_job_match
 
 
@@ -158,6 +158,19 @@ def format_review_update_result(decision: ReviewDecision) -> str:
     """Render a one-line confirmation for a persisted review update."""
     note = f" note={decision.note}" if decision.note else ""
     return f"Updated decision for {decision.posting_url}: {decision.decision.value}{note}"
+
+
+def format_rescore_summary(*, rescored_count: int) -> str:
+    """Render a concise CLI summary for score refreshes."""
+    return f"Rescored {rescored_count} jobs."
+
+
+def apply_score_result(job: JobPosting, score_result: ScoreResult) -> JobPosting:
+    """Return a job copy with refreshed score metadata applied."""
+    metadata = dict(job.metadata)
+    metadata["score"] = score_result.score
+    metadata["score_explanations"] = list(score_result.explanations)
+    return job.model_copy(update={"metadata": metadata})
 
 
 def parse_review_decision(value: str) -> ReviewStatus:

@@ -10,11 +10,14 @@ from job_agent.browser.session import BrowserSessionManager
 from job_agent.config import load_settings
 from job_agent.flows.discover import run_discovery_query
 from job_agent.logging import configure_logging
+from job_agent.core.scoring import rescore_job_posting
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
 from job_agent.ui.cli import (
+    apply_score_result,
     export_jobs_csv,
     format_review_update_result,
+    format_rescore_summary,
     open_job_in_browser,
     parse_review_decision,
     render_job_detail,
@@ -63,6 +66,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_review_filters(review_export_parser)
     review_export_parser.add_argument("--limit", type=int, default=100)
     review_export_parser.add_argument("--output", required=True, help="CSV output path.")
+
+    review_rescore_parser = review_subparsers.add_parser(
+        "rescore",
+        help="Recalculate stored scores using current deterministic rules.",
+    )
+    _add_review_filters(review_rescore_parser)
+    review_rescore_parser.add_argument("--limit", type=int, default=100000)
 
     review_decision_parser = review_subparsers.add_parser(
         "decision",
@@ -210,6 +220,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             output_path = export_jobs_csv(jobs, args.output)
             print(f"Exported {len(jobs)} jobs to {output_path}")
+            return 0
+
+        if args.review_command == "rescore":
+            try:
+                decision_filter = _parse_review_decision_filter(args.decision)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            jobs = repo.list_jobs(
+                source_site=args.source_site,
+                reviewed=_parse_review_filter(args.reviewed),
+                decision=decision_filter,
+                limit=args.limit,
+            )
+            rescored_count = 0
+            for job in jobs:
+                refreshed = apply_score_result(job, rescore_job_posting(job))
+                repo.update_job_score(
+                    posting_url=job.url.unicode_string(),
+                    score=int(refreshed.metadata["score"]),
+                    explanations=list(refreshed.metadata["score_explanations"]),
+                )
+                rescored_count += 1
+            print(format_rescore_summary(rescored_count=rescored_count))
             return 0
 
         parser.error("review requires a subcommand")

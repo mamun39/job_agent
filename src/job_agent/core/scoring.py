@@ -14,6 +14,17 @@ PREFERRED_SENIORITY_POINTS = 8
 NON_PREFERRED_SENIORITY_PENALTY = -6
 
 
+def build_default_scoring_criteria() -> ScoringCriteria:
+    """Return the current default deterministic scoring rules."""
+    return ScoringCriteria()
+
+
+def rescore_job_posting(job: JobPosting, criteria: ScoringCriteria | None = None) -> ScoreResult:
+    """Score a stored job using the current default rules unless criteria are provided."""
+    active_criteria = criteria or build_default_scoring_criteria()
+    return score_job_posting(job, active_criteria)
+
+
 def score_job_posting(job: JobPosting, criteria: ScoringCriteria) -> ScoreResult:
     """Score a job posting using conservative deterministic rules."""
     score = 0

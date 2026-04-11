@@ -11,7 +11,7 @@ Last updated: 2026-04-10
 - SQLite storage uses a single lightweight schema with no migration framework.
 - URL deduplication is conservative and generic; it does not include site-specific canonicalization rules.
 - Fallback deduplication uses exact normalized `title + company + location` comparison only and does not do fuzzy matching.
-- Relevance scoring uses fixed in-code weights and substring matching rather than externalized rules or semantic matching.
+- Relevance scoring uses fixed in-code weights and substring matching rather than externalized rules or semantic matching; stored scores can now be refreshed from the CLI, but score history is not retained separately from each job's current metadata.
 - Browser session tests validate wrapper behavior with fakes rather than launching a real browser end to end.
 - Playwright browser installation is environment-local and must be installed on each machine separately.
 - The Playwright fetch helper is generic and only supports URL navigation, page HTML capture, optional screenshots, and simple wait strategies; it does not include site-specific readiness checks.

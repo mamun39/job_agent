@@ -287,6 +287,39 @@ class JobsRepository:
             for row in rows
         }
 
+    def update_job_score(
+        self,
+        *,
+        posting_url: str,
+        score: int,
+        explanations: list[str],
+    ) -> JobPosting:
+        """Persist refreshed deterministic scoring fields for one stored job."""
+        job = self.fetch_by_url(posting_url)
+        if job is None:
+            raise ValueError(f"Job not found for url: {posting_url}")
+
+        metadata = dict(job.metadata)
+        metadata["score"] = score
+        metadata["score_explanations"] = list(explanations)
+        payload = dict(self._job_to_row(job.model_copy(update={"metadata": metadata})))
+        payload["posting_url"] = posting_url
+        self._connection.execute(
+            """
+            UPDATE jobs
+            SET
+                metadata_json = :metadata_json,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE url = :posting_url
+            """,
+            payload,
+        )
+        self._connection.commit()
+        stored = self.fetch_by_url(posting_url)
+        if stored is None:
+            raise RuntimeError("score update succeeded but job could not be reloaded")
+        return stored
+
     def _job_to_row(self, job: JobPosting) -> dict[str, Any]:
         return {
             "source_site": job.source_site,

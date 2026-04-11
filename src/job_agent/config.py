@@ -31,6 +31,7 @@ class Settings:
     max_pages_per_query: int = 1
     debug_artifacts_on_failure: bool = False
     discovery_options: DiscoveryOptions = field(default_factory=DiscoveryOptions)
+    board_registry_file: Path | None = None
     board_registry: list[BoardRegistryEntry] = field(default_factory=list)
     discovery_queries: list[DiscoveryQuery] | None = None
 
@@ -84,6 +85,7 @@ def load_settings() -> Settings:
         max_pages_per_query=load_max_pages_per_query(),
         debug_artifacts_on_failure=_parse_bool(os.getenv("JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE", "false")),
         discovery_options=load_discovery_options(),
+        board_registry_file=_load_optional_path("JOB_AGENT_BOARD_REGISTRY_FILE"),
         board_registry=load_board_registry(),
         discovery_queries=load_discovery_queries(),
     )

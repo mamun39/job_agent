@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import re
 from typing import Any
 
@@ -12,14 +14,57 @@ from job_agent.core.models import BoardRegistryEntry, SearchConstraint
 
 def load_board_registry_payload(payload: Any) -> list[BoardRegistryEntry]:
     """Validate raw registry payload into board registry entries."""
+    entries, issues = validate_board_registry_payload(payload)
+    if issues:
+        raise ValueError(f"Invalid board registry config: {'; '.join(issues)}")
+    return entries
+
+
+def validate_board_registry_payload(payload: Any) -> tuple[list[BoardRegistryEntry], list[str]]:
+    """Validate raw registry payload and return both entries and human-readable issues."""
     if payload is None:
-        return []
+        return [], []
     if not isinstance(payload, list):
-        raise ValueError("Board registry config must be a list of board objects")
+        return [], ["Board registry config must be a list of board objects"]
+
+    entries: list[BoardRegistryEntry] = []
+    issues: list[str] = []
+    for index, item in enumerate(payload):
+        try:
+            entries.append(BoardRegistryEntry.model_validate(item))
+        except ValidationError as exc:
+            issues.append(f"entry[{index}] invalid: {_summarize_validation_error(exc)}")
+    issues.extend(_detect_duplicate_issues(entries))
+    return entries, issues
+
+
+def load_board_registry_json_file(path: Path) -> list[BoardRegistryEntry]:
+    """Load a JSON registry file into validated entries."""
+    entries, issues = validate_board_registry_json_file(path)
+    if issues:
+        raise ValueError(f"Invalid board registry file: {'; '.join(issues)}")
+    return entries
+
+
+def validate_board_registry_json_file(path: Path) -> tuple[list[BoardRegistryEntry], list[str]]:
+    """Read and validate a JSON registry file into entries and issues."""
+    if not path.is_file():
+        return [], [f"Board registry file does not exist: {path}"]
+    if path.suffix.lower() != ".json":
+        return [], [f"Board registry maintenance requires a .json file: {path}"]
     try:
-        return [BoardRegistryEntry.model_validate(item) for item in payload]
-    except ValidationError as exc:
-        raise ValueError(f"Invalid board registry config: {exc}") from exc
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [], [f"Invalid board registry JSON file: {exc.msg}"]
+    return validate_board_registry_payload(payload)
+
+
+def save_board_registry_json_file(path: Path, entries: list[BoardRegistryEntry]) -> Path:
+    """Persist registry entries as sorted JSON."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = [_entry_to_json(entry) for entry in _sort_entries(entries)]
+    path.write_text(json.dumps(serialized, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def select_board_registry_entries(
@@ -56,6 +101,11 @@ def select_board_registry_entries(
         candidates = filtered
 
     return sorted(candidates, key=lambda entry: (entry.company_name.casefold(), entry.source_site, entry.board_url.unicode_string()))
+
+
+def sort_board_registry_entries(entries: list[BoardRegistryEntry]) -> list[BoardRegistryEntry]:
+    """Return registry entries in stable deterministic order."""
+    return _sort_entries(entries)
 
 
 def _filter_by_locations(
@@ -96,3 +146,64 @@ def _normalize_company_key(value: str) -> str:
 
 def _normalize_match_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+
+def _summarize_validation_error(exc: ValidationError) -> str:
+    parts: list[str] = []
+    for error in exc.errors():
+        location = ".".join(str(item) for item in error.get("loc", ()))
+        message = error.get("msg", "invalid value")
+        if location:
+            parts.append(f"{location}: {message}")
+        else:
+            parts.append(message)
+    return "; ".join(parts)
+
+
+def _detect_duplicate_issues(entries: list[BoardRegistryEntry]) -> list[str]:
+    issues: list[str] = []
+    seen_company_site: dict[tuple[str, str], BoardRegistryEntry] = {}
+    seen_url_site: dict[tuple[str, str], BoardRegistryEntry] = {}
+    for entry in entries:
+        company_site_key = (_normalize_company_key(entry.company_name), entry.source_site)
+        duplicate_company_site = seen_company_site.get(company_site_key)
+        if duplicate_company_site is not None:
+            issues.append(
+                "duplicate company/source entry: "
+                f"{entry.company_name} on {entry.source_site} "
+                f"already maps to {duplicate_company_site.board_url}"
+            )
+        else:
+            seen_company_site[company_site_key] = entry
+
+        url_site_key = (entry.source_site, entry.board_url.unicode_string())
+        duplicate_url_site = seen_url_site.get(url_site_key)
+        if duplicate_url_site is not None:
+            issues.append(
+                "duplicate board_url/source entry: "
+                f"{entry.board_url} on {entry.source_site} already exists for {duplicate_url_site.company_name}"
+            )
+        else:
+            seen_url_site[url_site_key] = entry
+    return issues
+
+
+def _sort_entries(entries: list[BoardRegistryEntry]) -> list[BoardRegistryEntry]:
+    return sorted(
+        entries,
+        key=lambda entry: (
+            entry.company_name.casefold(),
+            entry.source_site,
+            entry.board_url.unicode_string(),
+        ),
+    )
+
+
+def _entry_to_json(entry: BoardRegistryEntry) -> dict[str, Any]:
+    return {
+        "company_name": entry.company_name,
+        "source_site": entry.source_site,
+        "board_url": entry.board_url.unicode_string(),
+        "tags": list(entry.tags),
+        "location_hints": list(entry.location_hints),
+    }

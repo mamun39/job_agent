@@ -11,6 +11,14 @@ from typing import Any
 
 from job_agent.browser.session import BrowserSessionManager
 from job_agent.config import load_settings
+from job_agent.core.board_registry import (
+    load_board_registry_json_file,
+    load_board_registry_payload,
+    save_board_registry_json_file,
+    sort_board_registry_entries,
+    validate_board_registry_json_file,
+    validate_board_registry_payload,
+)
 from job_agent.core.models import CrawlResult, DiscoveryOptions, MatchedJobMatch
 from job_agent.flows.discover import run_discovery_query
 from job_agent.flows.prompt_search import run_prompt_search
@@ -77,7 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     search_parser = subparsers.add_parser(
         "search",
-        help="Run prompt-driven search from a raw natural-language prompt.",
+        help="Run prompt-driven search from a raw natural-language prompt using the local board registry.",
     )
     search_parser.add_argument("prompt", nargs="?", help="Inline natural-language search prompt.")
     search_parser.add_argument("--prompt-file", help="Path to a text file containing the prompt.")
@@ -95,6 +103,50 @@ def build_parser() -> argparse.ArgumentParser:
         help="Persist newly matched jobs into the configured database.",
     )
     _add_authenticated_browser_options(search_parser)
+
+    registry_parser = subparsers.add_parser(
+        "registry",
+        help="Manage the local board registry used to resolve prompt-driven plans into executable boards.",
+    )
+    registry_subparsers = registry_parser.add_subparsers(dest="registry_command")
+
+    registry_list_parser = registry_subparsers.add_parser("list", help="List board registry entries.")
+    registry_list_parser.add_argument("--registry-file", help="Path to the local board registry JSON file.")
+
+    registry_add_parser = registry_subparsers.add_parser("add", help="Add one board registry entry.")
+    registry_add_parser.add_argument("--registry-file", help="Path to the local board registry JSON file.")
+    registry_add_parser.add_argument("--company", required=True, help="Company name.")
+    registry_add_parser.add_argument("--source-site", required=True, help="Supported source site.")
+    registry_add_parser.add_argument("--board-url", required=True, help="Board listing URL.")
+    registry_add_parser.add_argument("--tag", action="append", default=[], help="Optional tag. Repeat for multiple values.")
+    registry_add_parser.add_argument(
+        "--location-hint",
+        action="append",
+        default=[],
+        help="Optional location hint. Repeat for multiple values.",
+    )
+
+    registry_remove_parser = registry_subparsers.add_parser("remove", help="Remove one board registry entry.")
+    registry_remove_parser.add_argument("--registry-file", help="Path to the local board registry JSON file.")
+    registry_remove_parser.add_argument("--company", required=True, help="Company name.")
+    registry_remove_parser.add_argument("--source-site", required=True, help="Supported source site.")
+    registry_remove_parser.add_argument("--board-url", help="Optional exact board URL to disambiguate removal.")
+
+    registry_validate_parser = registry_subparsers.add_parser("validate", help="Validate board registry entries.")
+    registry_validate_parser.add_argument("--registry-file", help="Path to the local board registry JSON file.")
+
+    registry_import_parser = registry_subparsers.add_parser("import", help="Import board registry entries from JSON.")
+    registry_import_parser.add_argument("--registry-file", help="Path to the destination local board registry JSON file.")
+    registry_import_parser.add_argument("--input", required=True, help="Source JSON file containing registry entries.")
+    registry_import_parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace destination entries instead of merging.",
+    )
+
+    registry_export_parser = registry_subparsers.add_parser("export", help="Export board registry entries to JSON.")
+    registry_export_parser.add_argument("--registry-file", help="Path to the source local board registry JSON file.")
+    registry_export_parser.add_argument("--output", required=True, help="Destination JSON file.")
 
     review_parser = subparsers.add_parser(
         "review",
@@ -278,6 +330,107 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_path = export_prompt_search_matches_csv(result.matched_jobs, args.export)
             print(f"Exported {len(result.matched_jobs)} matched jobs to {output_path}")
         return 0
+
+    if args.command == "registry":
+        if args.registry_command == "list":
+            try:
+                entries = _load_registry_entries_for_read(settings, registry_file=args.registry_file)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            if not entries:
+                print("No board registry entries configured.")
+                return 0
+            for entry in sort_board_registry_entries(entries):
+                tags = ",".join(entry.tags) if entry.tags else "-"
+                locations = ",".join(entry.location_hints) if entry.location_hints else "-"
+                print(
+                    f"{entry.company_name} | {entry.source_site} | {entry.board_url} | "
+                    f"tags={tags} | locations={locations}"
+                )
+            return 0
+
+        if args.registry_command == "validate":
+            issues: list[str] = []
+            if args.registry_file or settings.board_registry_file is not None:
+                registry_file = _resolve_registry_file(settings, registry_file=args.registry_file, require_writable=False)
+                _, issues = validate_board_registry_json_file(registry_file)
+            else:
+                _, issues = validate_board_registry_payload(_registry_entries_to_payload(settings.board_registry))
+            if issues:
+                print("Registry validation failed:")
+                for issue in issues:
+                    print(f"- {issue}")
+                return 1
+            print("Registry validation passed.")
+            return 0
+
+        if args.registry_command == "add":
+            try:
+                registry_file = _resolve_registry_file(settings, registry_file=args.registry_file, require_writable=True)
+                entry = load_board_registry_payload(
+                    [
+                        {
+                            "company_name": args.company,
+                            "source_site": args.source_site,
+                            "board_url": args.board_url,
+                            "tags": list(args.tag),
+                            "location_hints": list(args.location_hint),
+                        }
+                    ]
+                )[0]
+                entries = _load_registry_entries_for_write(registry_file)
+                entries.append(entry)
+                _write_registry_entries_with_validation(registry_file, entries)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            print(f"Added registry entry for {entry.company_name} on {entry.source_site}.")
+            return 0
+
+        if args.registry_command == "remove":
+            try:
+                registry_file = _resolve_registry_file(settings, registry_file=args.registry_file, require_writable=True)
+                entries = _load_registry_entries_for_write(registry_file)
+                remaining_entries, removed_entry = _remove_registry_entry(
+                    entries,
+                    company_name=args.company,
+                    source_site=args.source_site,
+                    board_url=args.board_url,
+                )
+                _write_registry_entries_with_validation(registry_file, remaining_entries)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            print(f"Removed registry entry for {removed_entry.company_name} on {removed_entry.source_site}.")
+            return 0
+
+        if args.registry_command == "import":
+            try:
+                registry_file = _resolve_registry_file(settings, registry_file=args.registry_file, require_writable=True)
+                imported_entries = load_board_registry_json_file(Path(args.input))
+                if args.replace:
+                    merged_entries = imported_entries
+                else:
+                    merged_entries = _load_registry_entries_for_write(registry_file) + imported_entries
+                _write_registry_entries_with_validation(registry_file, merged_entries)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            print(f"Imported {len(imported_entries)} registry entries into {registry_file}.")
+            return 0
+
+        if args.registry_command == "export":
+            try:
+                entries = _load_registry_entries_for_read(settings, registry_file=args.registry_file)
+                output_path = save_board_registry_json_file(Path(args.output), entries)
+            except ValueError as exc:
+                print(str(exc))
+                return 1
+            print(f"Exported {len(entries)} registry entries to {output_path}.")
+            return 0
+
+        parser.error("registry requires a subcommand")
 
     if args.command == "review":
         repo = JobsRepository(init_db(settings.db_path))
@@ -601,6 +754,75 @@ def _format_debug_artifact_hint(value: object) -> str:
     if isinstance(value, list) and value:
         return f" artifacts={value[0]}"
     return ""
+
+
+def _resolve_registry_file(settings: Any, *, registry_file: str | None, require_writable: bool) -> Path:
+    target = Path(registry_file) if registry_file else settings.board_registry_file
+    if target is None:
+        raise ValueError(
+            "Board registry maintenance requires --registry-file or JOB_AGENT_BOARD_REGISTRY_FILE."
+        )
+    if target.suffix.lower() != ".json":
+        raise ValueError("Board registry maintenance requires a .json registry file.")
+    if target.exists() and not target.is_file():
+        raise ValueError(f"Board registry path is not a file: {target}")
+    if require_writable and target.exists() and not target.is_file():
+        raise ValueError(f"Board registry path is not a writable file: {target}")
+    return target
+
+
+def _load_registry_entries_for_read(settings: Any, *, registry_file: str | None) -> list[Any]:
+    if registry_file or settings.board_registry_file is not None:
+        target = _resolve_registry_file(settings, registry_file=registry_file, require_writable=False)
+        if not target.exists():
+            return []
+        return load_board_registry_json_file(target)
+    return list(settings.board_registry)
+
+
+def _load_registry_entries_for_write(registry_file: Path) -> list[Any]:
+    if not registry_file.exists():
+        return []
+    return load_board_registry_json_file(registry_file)
+
+
+def _write_registry_entries_with_validation(registry_file: Path, entries: list[Any]) -> Path:
+    _, issues = validate_board_registry_payload(_registry_entries_to_payload(entries))
+    if issues:
+        raise ValueError(f"Registry validation failed: {'; '.join(issues)}")
+    return save_board_registry_json_file(registry_file, sort_board_registry_entries(entries))
+
+
+def _registry_entries_to_payload(entries: Sequence[Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "company_name": entry.company_name,
+            "source_site": entry.source_site,
+            "board_url": entry.board_url.unicode_string(),
+            "tags": list(entry.tags),
+            "location_hints": list(entry.location_hints),
+        }
+        for entry in entries
+    ]
+
+
+def _remove_registry_entry(entries: list[Any], *, company_name: str, source_site: str, board_url: str | None) -> tuple[list[Any], Any]:
+    normalized_company = "".join(char for char in company_name.casefold() if char.isalnum())
+    normalized_source = source_site.lower().replace(" ", "_").replace("-", "_")
+    matches = [
+        entry
+        for entry in entries
+        if "".join(char for char in entry.company_name.casefold() if char.isalnum()) == normalized_company
+        and entry.source_site == normalized_source
+        and (board_url is None or entry.board_url.unicode_string() == board_url)
+    ]
+    if not matches:
+        raise ValueError("No registry entry matched the requested company/source combination.")
+    if len(matches) > 1:
+        raise ValueError("Multiple registry entries matched. Re-run with --board-url to remove exactly one entry.")
+    removed = matches[0]
+    remaining = [entry for entry in entries if entry is not removed]
+    return remaining, removed
 
 
 if __name__ == "__main__":

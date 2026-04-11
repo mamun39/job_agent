@@ -148,8 +148,11 @@ def test_load_board_registry_from_yaml_file(tmp_path, monkeypatch) -> None:
 
 def test_load_settings_reads_authenticated_browser_config(tmp_path, monkeypatch) -> None:
     profile_dir = tmp_path / "auth-profile"
+    registry_path = tmp_path / "boards.json"
+    registry_path.write_text("[]", encoding="utf-8")
     monkeypatch.setenv("JOB_AGENT_BROWSER_AUTH_MODE", "profile")
     monkeypatch.setenv("JOB_AGENT_BROWSER_AUTH_PROFILE_DIR", str(profile_dir))
+    monkeypatch.setenv("JOB_AGENT_BOARD_REGISTRY_FILE", str(registry_path))
     monkeypatch.delenv("JOB_AGENT_BROWSER_AUTH_CDP_URL", raising=False)
 
     settings = load_settings()
@@ -157,6 +160,7 @@ def test_load_settings_reads_authenticated_browser_config(tmp_path, monkeypatch)
     assert settings.browser_auth_mode == "profile"
     assert settings.browser_auth_profile_dir == profile_dir
     assert settings.browser_auth_cdp_url is None
+    assert settings.board_registry_file == registry_path
 
 
 def test_invalid_authenticated_browser_mode_fails_clearly(monkeypatch) -> None:

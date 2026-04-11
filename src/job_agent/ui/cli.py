@@ -171,6 +171,11 @@ def format_mark_stale_summary(*, stale_count: int, stale_threshold_days: int) ->
     return f"Marked {stale_count} jobs stale using threshold={stale_threshold_days} days."
 
 
+def format_cleanup_summary(*, removed_review_decisions: int) -> str:
+    """Render a concise CLI summary for orphaned review-decision cleanup."""
+    return f"Removed {removed_review_decisions} orphaned review decisions."
+
+
 def apply_score_result(job: JobPosting, score_result: ScoreResult) -> JobPosting:
     """Return a job copy with refreshed score metadata applied."""
     metadata = dict(job.metadata)

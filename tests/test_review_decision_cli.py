@@ -113,3 +113,40 @@ def test_review_decision_invalid_input_and_missing_job_errors_are_clear(tmp_path
     assert exit_code == 1
     assert "Invalid review decision 'invalid'." in captured.out
     assert "saved, skipped, applied_elsewhere, needs_manual_review" in captured.out
+
+
+def test_review_cleanup_removes_orphaned_review_decisions(tmp_path, monkeypatch, capsys) -> None:
+    db_path = tmp_path / "review_decision_cli.db"
+    repo = JobsRepository(init_db(db_path))
+    job = _insert_job(repo, url="https://example.com/jobs/1", title="Job One")
+    repo.set_review_decision(posting_url=job.url.unicode_string(), decision="saved")
+    repo.set_review_decision(posting_url="https://example.com/jobs/orphan", decision="skipped")
+    repo._connection.execute("DELETE FROM jobs WHERE url = ?", ("https://example.com/jobs/1",))
+    repo._connection.commit()
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+
+    exit_code = main(["review", "cleanup"])
+    captured = capsys.readouterr()
+
+    remaining = repo._connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
+    assert exit_code == 0
+    assert "Removed 2 orphaned review decisions." in captured.out
+    assert remaining == 0
+
+
+def test_review_cleanup_reports_zero_when_no_orphans_exist(tmp_path, monkeypatch, capsys) -> None:
+    db_path = tmp_path / "review_decision_cli.db"
+    repo = JobsRepository(init_db(db_path))
+    job = _insert_job(repo, url="https://example.com/jobs/1", title="Job One")
+    repo.set_review_decision(posting_url=job.url.unicode_string(), decision="saved")
+    monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
+    monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
+
+    exit_code = main(["review", "cleanup"])
+    captured = capsys.readouterr()
+
+    remaining = repo._connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
+    assert exit_code == 0
+    assert "Removed 0 orphaned review decisions." in captured.out
+    assert remaining == 1

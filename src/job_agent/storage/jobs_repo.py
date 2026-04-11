@@ -384,6 +384,17 @@ class JobsRepository:
                 updated_count += 1
         return updated_count
 
+    def cleanup_orphaned_review_decisions(self) -> int:
+        """Delete persisted review decisions that no longer match any stored job URL."""
+        cursor = self._connection.execute(
+            """
+            DELETE FROM review_decisions
+            WHERE posting_url NOT IN (SELECT url FROM jobs)
+            """
+        )
+        self._connection.commit()
+        return int(cursor.rowcount if cursor.rowcount is not None else 0)
+
     def _job_to_row(self, job: JobPosting) -> dict[str, Any]:
         return {
             "source_site": job.source_site,

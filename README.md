@@ -119,6 +119,7 @@ job-agent review decision --id 1
 job-agent review set-decision --id 1 --decision saved --note "Strong fit"
 job-agent review rescore --source-site lever --reviewed unreviewed
 job-agent review mark-stale --days 14
+job-agent review cleanup
 job-agent review export --output ./exports/jobs.csv
 
 job-agent open --id 1
@@ -138,9 +139,10 @@ job-agent dashboard --host 127.0.0.1 --port 8001
 6. Run `job-agent review set-decision --id ... --decision ...` to triage a job.
 7. Run `job-agent review rescore` after changing deterministic scoring rules.
 8. Run `job-agent review mark-stale --days ...` as local maintenance to age old jobs into `stale`.
-9. Run `job-agent open --id ...` to open a posting in your browser for manual review.
-10. Run `job-agent dashboard` to review jobs in a minimal local browser UI.
-11. Run `job-agent review export --output ...` to export filtered jobs to CSV.
+9. Run `job-agent review cleanup` to remove orphaned stored review decisions after manual database cleanup or imports.
+10. Run `job-agent open --id ...` to open a posting in your browser for manual review.
+11. Run `job-agent dashboard` to review jobs in a minimal local browser UI.
+12. Run `job-agent review export --output ...` to export filtered jobs to CSV.
 
 ## Discovery behavior
 
@@ -168,6 +170,7 @@ Typical output:
 
 - `job-agent review list` supports filtering by `--source-site`, `--min-score`, `--reviewed`, `--decision`, and `--job-status`.
 - `job-agent review show` and `job-agent review decision` can target a stored job by `--id` or exact `--url`.
+- `job-agent review cleanup` removes orphaned `review_decisions` rows whose URLs no longer exist in `jobs`.
 - Supported explicit review decisions are:
   - `saved`
   - `skipped`
@@ -203,7 +206,7 @@ These paths are created automatically when needed.
 - The dashboard is a simple local FastAPI app with server-rendered pages for list, detail, and review-decision updates.
 - The dashboard is intended for localhost use and does not implement authentication, CSRF protection, pagination, or richer multi-user web features.
 - Stale detection is local and timestamp-based. It does not confirm whether a posting was actually removed from the source site.
-- Review decisions store only the latest explicit state for a posting URL.
+- Review decisions store only the latest explicit state for a posting URL, and orphan cleanup is manual via `job-agent review cleanup`.
 - The optional summarizer layer is presentation-only today: it returns short explanatory text from job data plus rule explanations and does not modify stored job records.
 - Model-backed summarizers are not implemented; the default behavior is a local fallback summarizer with no remote dependency.
 

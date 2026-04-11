@@ -51,6 +51,90 @@ def test_init_db_creates_jobs_table(tmp_path) -> None:
     assert row["name"] == "jobs"
 
 
+def test_init_db_upgrades_legacy_jobs_table_with_last_seen_at(tmp_path) -> None:
+    db_path = tmp_path / "job-agent.db"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_site TEXT NOT NULL,
+                source_job_id TEXT,
+                url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                company TEXT NOT NULL,
+                location TEXT NOT NULL,
+                remote_status TEXT NOT NULL,
+                employment_type TEXT NOT NULL,
+                seniority TEXT NOT NULL,
+                posted_at TEXT,
+                discovered_at TEXT NOT NULL,
+                description_text TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO jobs (
+                source_site,
+                source_job_id,
+                url,
+                title,
+                company,
+                location,
+                remote_status,
+                employment_type,
+                seniority,
+                posted_at,
+                discovered_at,
+                description_text,
+                metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "greenhouse",
+                "legacy-1",
+                "https://example.com/jobs/legacy-1",
+                "Legacy Job",
+                "Example Co",
+                "Toronto, ON",
+                "remote",
+                "full_time",
+                "mid",
+                None,
+                "2026-04-10T00:00:00+00:00",
+                "Legacy description",
+                "{}",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    upgraded = init_db(db_path)
+    try:
+        columns = {
+            row["name"]: row
+            for row in upgraded.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+        row = upgraded.execute(
+            "SELECT job_status, last_seen_at FROM jobs WHERE url = ?",
+            ("https://example.com/jobs/legacy-1",),
+        ).fetchone()
+    finally:
+        upgraded.close()
+
+    assert "job_status" in columns
+    assert "last_seen_at" in columns
+    assert row is not None
+    assert row["job_status"] == "active"
+    assert row["last_seen_at"] == "2026-04-10T00:00:00+00:00"
+
+
 def test_insert_and_fetch_job(tmp_path) -> None:
     connection = init_db(tmp_path / "job-agent.db")
     repo = JobsRepository(connection)

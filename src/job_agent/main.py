@@ -19,6 +19,7 @@ from job_agent.storage.jobs_repo import JobsRepository
 from job_agent.ui.cli import (
     apply_score_result,
     export_jobs_csv,
+    format_cleanup_summary,
     format_mark_stale_summary,
     format_review_update_result,
     format_rescore_summary,
@@ -97,6 +98,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_review_filters(review_mark_stale_parser)
     review_mark_stale_parser.add_argument("--days", type=int, required=True, help="Stale threshold in days.")
     review_mark_stale_parser.add_argument("--limit", type=int, default=100000)
+
+    review_subparsers.add_parser(
+        "cleanup",
+        help="Delete orphaned review decisions that no longer match stored jobs.",
+    )
 
     review_decision_parser = review_subparsers.add_parser(
         "decision",
@@ -308,6 +314,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(str(exc))
                 return 1
             print(format_mark_stale_summary(stale_count=stale_count, stale_threshold_days=args.days))
+            return 0
+
+        if args.review_command == "cleanup":
+            removed_review_decisions = repo.cleanup_orphaned_review_decisions()
+            print(format_cleanup_summary(removed_review_decisions=removed_review_decisions))
             return 0
 
         parser.error("review requires a subcommand")

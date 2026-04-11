@@ -83,4 +83,11 @@ def _ensure_jobs_columns(connection: sqlite3.Connection) -> None:
     if "job_status" not in existing_columns:
         connection.execute("ALTER TABLE jobs ADD COLUMN job_status TEXT NOT NULL DEFAULT 'active'")
     if "last_seen_at" not in existing_columns:
-        connection.execute("ALTER TABLE jobs ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        connection.execute("ALTER TABLE jobs ADD COLUMN last_seen_at TEXT")
+        connection.execute(
+            """
+            UPDATE jobs
+            SET last_seen_at = COALESCE(last_seen_at, discovered_at, posted_at, CURRENT_TIMESTAMP)
+            WHERE last_seen_at IS NULL
+            """
+        )

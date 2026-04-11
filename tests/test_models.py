@@ -6,7 +6,19 @@ import pytest
 from pydantic import ValidationError
 
 from job_agent import JobPosting
-from job_agent.core.models import CrawlResult, EmploymentType, RemoteStatus, SearchQuery, SeniorityLevel
+from job_agent.core.models import (
+    CrawlResult,
+    EmploymentType,
+    MatchExplanation,
+    RemotePreference,
+    RemoteStatus,
+    SearchConstraint,
+    SearchIntent,
+    SearchPlan,
+    SearchPlanQuery,
+    SearchQuery,
+    SeniorityLevel,
+)
 
 
 def test_job_posting_accepts_valid_input() -> None:
@@ -112,3 +124,123 @@ def test_crawl_result_requires_error_message_on_failure() -> None:
         )
 
     assert "error_message is required when success is false" in str(exc_info.value)
+
+
+def test_search_constraint_normalizes_lists_and_optional_defaults() -> None:
+    constraints = SearchConstraint(
+        target_titles=" Senior Python Engineer ",
+        include_keywords=[" backend ", " distributed systems "],
+        exclude_keywords=None,
+        location_constraints=" Remote - Canada ",
+        remote_preference="remote_preferred",
+        seniority_preferences=["senior", "staff"],
+        source_site_preferences=[" Greenhouse ", "lever"],
+        include_companies=" Example Co ",
+    )
+
+    assert constraints.target_titles == ["Senior Python Engineer"]
+    assert constraints.include_keywords == ["backend", "distributed systems"]
+    assert constraints.exclude_keywords == []
+    assert constraints.location_constraints == ["Remote - Canada"]
+    assert constraints.remote_preference is RemotePreference.REMOTE_PREFERRED
+    assert constraints.seniority_preferences == [SeniorityLevel.SENIOR, SeniorityLevel.STAFF]
+    assert constraints.source_site_preferences == ["greenhouse", "lever"]
+    assert constraints.include_companies == ["Example Co"]
+    assert constraints.exclude_companies == []
+    assert constraints.freshness_window_days is None
+
+
+def test_search_intent_accepts_realistic_prompt_payload() -> None:
+    intent = SearchIntent(
+        prompt_text="Find senior backend Python roles in Canada, preferably remote, avoid crypto companies.",
+        summary="Senior remote-leaning backend search in Canada.",
+        constraints={
+            "target_titles": ["Backend Engineer", "Platform Engineer"],
+            "include_keywords": ["python", "api"],
+            "exclude_keywords": ["crypto"],
+            "location_constraints": ["Canada", "Remote"],
+            "remote_preference": "remote_only",
+            "seniority_preferences": ["senior"],
+            "source_site_preferences": ["Greenhouse", "Lever"],
+            "freshness_window_days": 14,
+            "exclude_companies": ["Speculative Labs"],
+        },
+    )
+
+    assert intent.prompt_text.startswith("Find senior backend Python roles")
+    assert intent.summary == "Senior remote-leaning backend search in Canada."
+    assert intent.constraints.remote_preference is RemotePreference.REMOTE_ONLY
+    assert intent.constraints.freshness_window_days == 14
+    assert intent.constraints.source_site_preferences == ["greenhouse", "lever"]
+
+
+def test_search_plan_validates_supported_executable_queries() -> None:
+    intent = SearchIntent(
+        prompt_text="Find senior platform roles.",
+        constraints={"target_titles": ["Platform Engineer"], "include_keywords": ["python"]},
+    )
+    plan = SearchPlan(
+        intent=intent,
+        constraints=intent.constraints,
+        queries=[
+            {
+                "source_site": "Greenhouse",
+                "target_titles": ["Platform Engineer"],
+                "include_keywords": ["python", "backend"],
+                "location_constraints": ["Canada"],
+                "remote_preference": "remote_preferred",
+                "seniority_preferences": ["senior"],
+                "freshness_window_days": 7,
+            },
+            {
+                "source_site": "lever",
+                "target_titles": ["Backend Engineer"],
+                "exclude_keywords": ["manager"],
+                "include_companies": ["Example Co"],
+            },
+        ],
+    )
+
+    assert len(plan.queries) == 2
+    assert plan.queries[0].source_site == "greenhouse"
+    assert plan.queries[0].remote_preference is RemotePreference.REMOTE_PREFERRED
+    assert plan.queries[1].include_companies == ["Example Co"]
+
+
+def test_search_plan_query_rejects_unsupported_source_site() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        SearchPlanQuery(source_site="linkedin", include_keywords=["python"])
+
+    assert "source_site must be one of: greenhouse, lever" in str(exc_info.value)
+
+
+def test_search_plan_requires_at_least_one_query() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        SearchPlan(
+            intent=SearchIntent(prompt_text="Find jobs."),
+            queries=[],
+        )
+
+    assert "queries must contain at least one executable query" in str(exc_info.value)
+
+
+def test_search_constraint_rejects_invalid_list_shape_with_clear_error() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        SearchConstraint(include_keywords=123)
+
+    assert "value must be a list of strings" in str(exc_info.value)
+
+
+def test_match_explanation_handles_defaults_and_normalizes_text() -> None:
+    explanation = MatchExplanation(
+        summary=" Strong title and keyword match ",
+        matched_titles=" Senior Python Engineer ",
+        matched_keywords=[" python ", " backend "],
+        notes=None,
+    )
+
+    assert explanation.summary == "Strong title and keyword match"
+    assert explanation.matched_titles == ["Senior Python Engineer"]
+    assert explanation.matched_keywords == ["python", "backend"]
+    assert explanation.notes == []
+    assert explanation.location_match is None

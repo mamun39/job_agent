@@ -63,6 +63,17 @@ class JobStatus(StrEnum):
         return tuple(status.value for status in cls)
 
 
+class RemotePreference(StrEnum):
+    UNSPECIFIED = "unspecified"
+    REMOTE_ONLY = "remote_only"
+    REMOTE_PREFERRED = "remote_preferred"
+    HYBRID_PREFERRED = "hybrid_preferred"
+    ONSITE_OK = "onsite_ok"
+
+
+SUPPORTED_DISCOVERY_SITES: frozenset[str] = frozenset({"greenhouse", "lever"})
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -72,6 +83,19 @@ def _normalize_text(value: str) -> str:
     if not normalized:
         raise ValueError("value must not be empty")
     return normalized
+
+
+def _normalize_string_list(value: Any, *, casefold: bool = False) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        raise ValueError("value must be a list of strings")
+    normalized_items = [_normalize_text(item) for item in value]
+    if casefold:
+        return [item.casefold() for item in normalized_items]
+    return normalized_items
 
 
 class JobPosting(BaseModel):
@@ -175,13 +199,7 @@ class SearchQuery(BaseModel):
     @field_validator("keywords", "companies", mode="before")
     @classmethod
     def _normalize_string_list(cls, value: Any) -> Any:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            value = [value]
-        if not isinstance(value, list):
-            raise ValueError("value must be a list of strings")
-        return [_normalize_text(item) for item in value]
+        return _normalize_string_list(value)
 
     @field_validator("location", mode="before")
     @classmethod
@@ -219,13 +237,160 @@ class DiscoveryQuery(BaseModel):
     @field_validator("include_keywords", "exclude_keywords", "location_hints", mode="before")
     @classmethod
     def _normalize_string_list(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+
+class SearchConstraint(BaseModel):
+    """Normalized user or plan constraints for job discovery."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    target_titles: list[str] = Field(default_factory=list)
+    include_keywords: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
+    location_constraints: list[str] = Field(default_factory=list)
+    remote_preference: RemotePreference = RemotePreference.UNSPECIFIED
+    seniority_preferences: list[SeniorityLevel] = Field(default_factory=list)
+    source_site_preferences: list[str] = Field(default_factory=list)
+    freshness_window_days: int | None = Field(default=None, ge=1, le=365)
+    include_companies: list[str] = Field(default_factory=list)
+    exclude_companies: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "target_titles",
+        "include_keywords",
+        "exclude_keywords",
+        "location_constraints",
+        "include_companies",
+        "exclude_companies",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_constraint_lists(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+    @field_validator("source_site_preferences", mode="before")
+    @classmethod
+    def _normalize_source_site_preferences(cls, value: Any) -> list[str]:
+        return [item.lower().replace(" ", "_").replace("-", "_") for item in _normalize_string_list(value)]
+
+
+class SearchIntent(BaseModel):
+    """Structured user-facing search intent extracted from a natural-language prompt."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    prompt_text: str
+    constraints: SearchConstraint = Field(default_factory=SearchConstraint)
+    summary: str | None = None
+
+    @field_validator("prompt_text", "summary", mode="before")
+    @classmethod
+    def _normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
-            return []
-        if isinstance(value, str):
-            value = [value]
-        if not isinstance(value, list):
-            raise ValueError("value must be a list of strings")
-        return [_normalize_text(item) for item in value]
+            return None
+        return _normalize_text(value)
+
+
+class SearchPlanQuery(BaseModel):
+    """One executable site-specific search query derived from a search intent."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    source_site: str
+    target_titles: list[str] = Field(default_factory=list)
+    include_keywords: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
+    location_constraints: list[str] = Field(default_factory=list)
+    remote_preference: RemotePreference = RemotePreference.UNSPECIFIED
+    seniority_preferences: list[SeniorityLevel] = Field(default_factory=list)
+    freshness_window_days: int | None = Field(default=None, ge=1, le=365)
+    include_companies: list[str] = Field(default_factory=list)
+    exclude_companies: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "target_titles",
+        "include_keywords",
+        "exclude_keywords",
+        "location_constraints",
+        "include_companies",
+        "exclude_companies",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_plan_lists(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+    @field_validator("source_site", mode="before")
+    @classmethod
+    def _normalize_plan_source_site(cls, value: str) -> str:
+        return _normalize_text(value)
+
+    @field_validator("source_site")
+    @classmethod
+    def _validate_plan_source_site(cls, value: str) -> str:
+        normalized = value.lower().replace(" ", "_").replace("-", "_")
+        if normalized not in SUPPORTED_DISCOVERY_SITES:
+            supported = ", ".join(sorted(SUPPORTED_DISCOVERY_SITES))
+            raise ValueError(f"source_site must be one of: {supported}")
+        return normalized
+
+
+class SearchPlan(BaseModel):
+    """Executable search plan derived from a search intent for supported discovery sites."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    intent: SearchIntent
+    queries: list[SearchPlanQuery] = Field(default_factory=list)
+    constraints: SearchConstraint | None = None
+
+    @model_validator(mode="after")
+    def _validate_queries(self) -> SearchPlan:
+        if not self.queries:
+            raise ValueError("queries must contain at least one executable query")
+        return self
+
+
+class MatchExplanation(BaseModel):
+    """Structured deterministic explanation for why a job matched an intent or plan."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    summary: str
+    matched_titles: list[str] = Field(default_factory=list)
+    matched_keywords: list[str] = Field(default_factory=list)
+    excluded_keywords_triggered: list[str] = Field(default_factory=list)
+    location_match: str | None = None
+    remote_alignment: str | None = None
+    seniority_alignment: str | None = None
+    company_alignment: str | None = None
+    notes: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "summary",
+        "location_match",
+        "remote_alignment",
+        "seniority_alignment",
+        "company_alignment",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_explanation_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_text(value)
+
+    @field_validator(
+        "matched_titles",
+        "matched_keywords",
+        "excluded_keywords_triggered",
+        "notes",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_explanation_lists(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
 
 
 class CrawlResult(BaseModel):
@@ -305,13 +470,7 @@ class ScoringCriteria(BaseModel):
     )
     @classmethod
     def _normalize_keyword_list(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            value = [value]
-        if not isinstance(value, list):
-            raise ValueError("value must be a list of strings")
-        return [_normalize_text(item).casefold() for item in value]
+        return _normalize_string_list(value, casefold=True)
 
 
 class ScoreResult(BaseModel):

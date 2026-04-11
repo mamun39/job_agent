@@ -170,7 +170,7 @@ class JobPosting(BaseModel):
     def canonical_url(self) -> str:
         from job_agent.core.dedupe import canonicalize_url
 
-        return canonicalize_url(str(self.url))
+        return canonicalize_url(str(self.url), source_site=self.source_site)
 
     @property
     def dedupe_key(self) -> str:

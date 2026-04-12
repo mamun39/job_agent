@@ -8,6 +8,16 @@
 <body>
   <main class="page">
     <h1>Jobs</h1>
+    {% if request.query_params.get('updated') == '1' %}
+      <p class="notice">Review decision updated.</p>
+    {% endif %}
+    {% if errors %}
+      <div class="error-list">
+        {% for error in errors %}
+          <p>{{ error }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
     <form method="get" action="/jobs" class="filters">
       <label>Source Site <input type="text" name="source_site" value="{{ filters.source_site }}"></label>
       <label>Company <input type="text" name="company" value="{{ filters.company }}"></label>
@@ -21,9 +31,35 @@
       </label>
       <label>Decision <input type="text" name="decision" value="{{ filters.decision }}"></label>
       <label>Min Score <input type="number" step="1" name="min_score" value="{{ filters.min_score }}"></label>
-      <label>Limit <input type="number" step="1" min="1" name="limit" value="{{ filters.limit }}"></label>
+      <label>Sort By
+        <select name="sort_by">
+          {% for field in sort_fields %}
+            <option value="{{ field }}"{% if filters.sort_by == field %} selected{% endif %}>{{ field }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Direction
+        <select name="sort_dir">
+          <option value="desc"{% if filters.sort_dir == 'desc' %} selected{% endif %}>Descending</option>
+          <option value="asc"{% if filters.sort_dir == 'asc' %} selected{% endif %}>Ascending</option>
+        </select>
+      </label>
+      <label>Per Page <input type="number" step="1" min="1" max="100" name="per_page" value="{{ filters.per_page }}"></label>
+      <input type="hidden" name="page" value="1">
       <button type="submit">Apply Filters</button>
     </form>
+
+    <div class="results-bar">
+      <p>Showing {{ jobs|length }} of {{ pagination.total_jobs }} jobs. Page {{ pagination.page }} of {{ pagination.total_pages }}.</p>
+      <div class="pagination-links">
+        {% if pagination.has_previous %}
+          <a href="/jobs?source_site={{ filters.source_site }}&company={{ filters.company }}&location_contains={{ filters.location_contains }}&reviewed={{ filters.reviewed }}&decision={{ filters.decision }}&min_score={{ filters.min_score }}&per_page={{ filters.per_page }}&sort_by={{ filters.sort_by }}&sort_dir={{ filters.sort_dir }}&page={{ pagination.previous_page }}">Previous</a>
+        {% endif %}
+        {% if pagination.has_next %}
+          <a href="/jobs?source_site={{ filters.source_site }}&company={{ filters.company }}&location_contains={{ filters.location_contains }}&reviewed={{ filters.reviewed }}&decision={{ filters.decision }}&min_score={{ filters.min_score }}&per_page={{ filters.per_page }}&sort_by={{ filters.sort_by }}&sort_dir={{ filters.sort_dir }}&page={{ pagination.next_page }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
 
     {% if jobs %}
       <table class="jobs-table">
@@ -35,17 +71,38 @@
             <th>Source</th>
             <th>Score</th>
             <th>Decision</th>
+            <th>Quick Review</th>
           </tr>
         </thead>
         <tbody>
         {% for job in jobs %}
           <tr>
-            <td><a href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
+            <td>
+              <a href="{{ job.detail_url }}">{{ job.title }}</a>
+            </td>
             <td>{{ job.company }}</td>
             <td>{{ job.location }}</td>
             <td>{{ job.source_site }}</td>
-            <td>{{ job.score }}</td>
-            <td>{{ job.decision }}</td>
+            <td>
+              <strong>{{ job.score }}</strong>
+              {% if job.score_explanations %}
+                <div class="subtle">{{ job.score_explanations[0] }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {{ job.decision }}
+              {% if job.decision_note %}
+                <div class="subtle">{{ job.decision_note }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="/jobs/{{ job.id }}/decision" class="quick-actions">
+                <input type="hidden" name="redirect_to" value="{{ job.return_to }}">
+                <button type="submit" name="decision" value="saved">Save</button>
+                <button type="submit" name="decision" value="skipped">Skip</button>
+                <button type="submit" name="decision" value="needs_manual_review">Manual</button>
+              </form>
+            </td>
           </tr>
         {% endfor %}
         </tbody>

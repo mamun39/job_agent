@@ -6,7 +6,7 @@ body {
 }
 
 .page {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 24px;
 }
@@ -80,4 +80,55 @@ button {
   background: #dbead6;
   border: 1px solid #99b48f;
   padding: 8px 12px;
+}
+
+.error-list {
+  background: #f8dfdf;
+  border: 1px solid #d29090;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+}
+
+.error-list p {
+  margin: 4px 0;
+}
+
+.results-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.pagination-links {
+  display: flex;
+  gap: 12px;
+}
+
+.pagination-links a {
+  color: #214e34;
+  text-decoration: none;
+}
+
+.subtle {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-actions button {
+  padding: 6px 10px;
+}
+
+.explanations {
+  background: #fff;
+  border: 1px solid #d7d2c8;
+  padding: 12px 18px;
 }

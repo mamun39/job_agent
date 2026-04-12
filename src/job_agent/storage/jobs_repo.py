@@ -159,7 +159,10 @@ class JobsRepository:
         employment_type: str | None = None,
         seniority: str | None = None,
         location_contains: str | None = None,
-        limit: int = 100,
+        limit: int | None = 100,
+        offset: int = 0,
+        sort_by: str = "discovered_at",
+        sort_desc: bool = True,
     ) -> list[JobPosting]:
         """List jobs using simple equality and substring filters."""
         query = "SELECT * FROM jobs"
@@ -192,11 +195,15 @@ class JobsRepository:
         if clauses:
             query = f"{query} WHERE {' AND '.join(clauses)}"
 
-        query = f"{query} ORDER BY discovered_at DESC, id DESC LIMIT ?"
-        params.append(limit)
+        query = f"{query} ORDER BY discovered_at DESC, id DESC"
         rows = self._connection.execute(query, params).fetchall()
         jobs = [self._row_to_job(row) for row in rows]
-        return self._filter_review_fields(jobs, min_score=min_score, reviewed=reviewed, decision=decision)
+        filtered = self._filter_review_fields(jobs, min_score=min_score, reviewed=reviewed, decision=decision)
+        sorted_jobs = self._sort_jobs(filtered, sort_by=sort_by, sort_desc=sort_desc)
+        start = max(offset, 0)
+        if limit is None:
+            return sorted_jobs[start:]
+        return sorted_jobs[start:start + max(limit, 0)]
 
     def fetch_for_review(self, *, job_id: int | None = None, url: str | None = None) -> JobPosting | None:
         """Fetch one stored job for CLI review output by id or exact URL."""
@@ -569,6 +576,11 @@ class JobsRepository:
             }
         )
 
+    def _sort_jobs(self, jobs: list[JobPosting], *, sort_by: str, sort_desc: bool) -> list[JobPosting]:
+        normalized_sort = sort_by.strip().lower()
+        sort_key = _job_sort_key_builder(normalized_sort)
+        return sorted(jobs, key=sort_key, reverse=sort_desc)
+
 
 def _prefer_text(incoming: str, existing: str) -> str:
     if _is_unknown_text(incoming):
@@ -591,3 +603,28 @@ def _prefer_description(incoming: str, existing: str) -> str:
 def _is_unknown_text(value: str) -> bool:
     normalized = value.strip().casefold()
     return normalized in {"unknown location", "unknown company", "unknown title"}
+
+
+def _job_sort_key_builder(sort_by: str):
+    if sort_by == "title":
+        return lambda job: (job.title.casefold(), int(job.metadata.get("db_id", 0)))
+    if sort_by == "company":
+        return lambda job: (job.company.casefold(), int(job.metadata.get("db_id", 0)))
+    if sort_by == "location":
+        return lambda job: (job.location.casefold(), int(job.metadata.get("db_id", 0)))
+    if sort_by == "source_site":
+        return lambda job: (job.source_site.casefold(), int(job.metadata.get("db_id", 0)))
+    if sort_by == "score":
+        return lambda job: (_numeric_score_or_default(job), int(job.metadata.get("db_id", 0)))
+    if sort_by == "posted_at":
+        return lambda job: (job.posted_at or datetime.min.replace(tzinfo=UTC), int(job.metadata.get("db_id", 0)))
+    return lambda job: (job.discovered_at, int(job.metadata.get("db_id", 0)))
+
+
+def _numeric_score_or_default(job: JobPosting) -> float:
+    value = job.metadata.get("score")
+    if isinstance(value, bool):
+        return float("-inf")
+    if isinstance(value, (int, float)):
+        return float(value)
+    return float("-inf")

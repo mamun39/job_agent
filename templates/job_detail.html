@@ -7,7 +7,7 @@
 </head>
 <body>
   <main class="page">
-    <p><a href="/jobs">Back to jobs</a></p>
+    <p><a href="{{ return_to }}">Back to jobs</a></p>
     <h1>{{ job.title }}</h1>
     {% if request.query_params.get('updated') == '1' %}
       <p class="notice">Review decision updated.</p>
@@ -20,16 +20,26 @@
       <dt>Remote Status</dt><dd>{{ job.remote_status.value }}</dd>
       <dt>Employment Type</dt><dd>{{ job.employment_type.value }}</dd>
       <dt>Seniority</dt><dd>{{ job.seniority.value }}</dd>
-      <dt>Score</dt><dd>{{ job.metadata.get('score', 'n/a') }}</dd>
+      <dt>Score</dt><dd><strong>{{ score_display }}</strong></dd>
       <dt>Current Decision</dt><dd>{{ decision.decision.value if decision else 'none' }}</dd>
       <dt>Current Note</dt><dd>{{ decision.note if decision and decision.note else 'n/a' }}</dd>
     </dl>
+
+    {% if score_explanations %}
+      <h2>Score Explanations</h2>
+      <ul class="explanations">
+        {% for item in score_explanations %}
+          <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
 
     <h2>Description</h2>
     <pre class="description">{{ job.description_text }}</pre>
 
     <h2>Update Review Decision</h2>
     <form method="post" action="/jobs/{{ job.metadata['db_id'] }}/decision" class="decision-form">
+      <input type="hidden" name="redirect_to" value="{{ return_to }}">
       <label>Decision
         <select name="decision">
           {% for status in review_statuses %}
@@ -41,6 +51,14 @@
         <textarea name="note" rows="4">{{ decision.note if decision and decision.note else '' }}</textarea>
       </label>
       <button type="submit">Save Review Decision</button>
+    </form>
+
+    <h2>Quick Actions</h2>
+    <form method="post" action="/jobs/{{ job.metadata['db_id'] }}/decision" class="quick-actions">
+      <input type="hidden" name="redirect_to" value="{{ return_to }}">
+      <button type="submit" name="decision" value="saved">Mark Saved</button>
+      <button type="submit" name="decision" value="skipped">Mark Skipped</button>
+      <button type="submit" name="decision" value="needs_manual_review">Needs Manual Review</button>
     </form>
   </main>
 </body>

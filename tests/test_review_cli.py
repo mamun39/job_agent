@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from job_agent.config import Settings
-from job_agent.core.models import JobPosting
+from job_agent.core.models import JobPosting, ReviewStatus
 from job_agent.main import main
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
@@ -16,13 +16,10 @@ def _insert_job(
     source_site: str,
     title: str,
     score: int | None,
-    reviewed: bool | None,
 ) -> None:
     metadata = {}
     if score is not None:
         metadata["score"] = score
-    if reviewed is not None:
-        metadata["reviewed"] = reviewed
     repo.insert_job(
         JobPosting(
             source_site=source_site,
@@ -40,9 +37,11 @@ def _insert_job(
 def test_review_list_filters_by_source_score_and_review_state(tmp_path, monkeypatch, capsys) -> None:
     db_path = tmp_path / "review.db"
     repo = JobsRepository(init_db(db_path))
-    _insert_job(repo, url="https://example.com/jobs/1", source_site="greenhouse", title="Job One", score=80, reviewed=True)
-    _insert_job(repo, url="https://example.com/jobs/2", source_site="greenhouse", title="Job Two", score=40, reviewed=False)
-    _insert_job(repo, url="https://example.com/jobs/3", source_site="lever", title="Job Three", score=90, reviewed=True)
+    _insert_job(repo, url="https://example.com/jobs/1", source_site="greenhouse", title="Job One", score=80)
+    _insert_job(repo, url="https://example.com/jobs/2", source_site="greenhouse", title="Job Two", score=40)
+    _insert_job(repo, url="https://example.com/jobs/3", source_site="lever", title="Job Three", score=90)
+    repo.set_review_decision(posting_url="https://example.com/jobs/1", decision=ReviewStatus.SAVED)
+    repo.set_review_decision(posting_url="https://example.com/jobs/3", decision=ReviewStatus.SKIPPED)
     monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
     monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
 
@@ -58,7 +57,8 @@ def test_review_list_filters_by_source_score_and_review_state(tmp_path, monkeypa
 def test_review_show_renders_single_job_detail(tmp_path, monkeypatch, capsys) -> None:
     db_path = tmp_path / "review.db"
     repo = JobsRepository(init_db(db_path))
-    _insert_job(repo, url="https://example.com/jobs/1", source_site="greenhouse", title="Job One", score=80, reviewed=True)
+    _insert_job(repo, url="https://example.com/jobs/1", source_site="greenhouse", title="Job One", score=80)
+    repo.set_review_decision(posting_url="https://example.com/jobs/1", decision=ReviewStatus.SAVED)
     monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
     monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
 
@@ -74,8 +74,9 @@ def test_review_export_writes_filtered_csv(tmp_path, monkeypatch, capsys) -> Non
     db_path = tmp_path / "review.db"
     export_path = tmp_path / "exports" / "jobs.csv"
     repo = JobsRepository(init_db(db_path))
-    _insert_job(repo, url="https://example.com/jobs/1", source_site="greenhouse", title="Job One", score=80, reviewed=True)
-    _insert_job(repo, url="https://example.com/jobs/2", source_site="greenhouse", title="Job Two", score=20, reviewed=False)
+    _insert_job(repo, url="https://example.com/jobs/1", source_site="greenhouse", title="Job One", score=80)
+    _insert_job(repo, url="https://example.com/jobs/2", source_site="greenhouse", title="Job Two", score=20)
+    repo.set_review_decision(posting_url="https://example.com/jobs/1", decision=ReviewStatus.SAVED)
     monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
     monkeypatch.setattr("job_agent.main.configure_logging", lambda level: None)
 

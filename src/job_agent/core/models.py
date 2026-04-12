@@ -612,6 +612,25 @@ class ReviewDecision(BaseModel):
         return _normalize_text(value)
 
 
+class ReviewDecisionHistoryEntry(BaseModel):
+    """Append-only local audit entry for one review decision write."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    history_id: int | None = None
+    posting_url: HttpUrl
+    decision: ReviewStatus
+    decided_at: datetime = Field(default_factory=_utc_now)
+    note: str | None = None
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def _normalize_history_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_text(value)
+
+
 class ScoringCriteria(BaseModel):
     """Deterministic rule inputs for job relevance scoring."""
 

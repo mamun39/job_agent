@@ -51,6 +51,17 @@ SCHEMA_STATEMENTS = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_review_decisions_decision ON review_decisions(decision)",
     """
+    CREATE TABLE IF NOT EXISTS review_decision_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        posting_url TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_review_decision_history_posting_url ON review_decision_history(posting_url)",
+    """
     CREATE TABLE IF NOT EXISTS saved_searches (
         name TEXT PRIMARY KEY,
         raw_prompt_text TEXT NOT NULL,

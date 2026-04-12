@@ -170,6 +170,21 @@ def test_dashboard_quick_review_action_redirects_back_to_list(tmp_path) -> None:
     assert stored.note is None
 
 
+def test_dashboard_detail_shows_review_history_from_persisted_decisions(tmp_path) -> None:
+    repo = JobsRepository(init_db(tmp_path / "dashboard.db"))
+    job = _insert_job(repo, url="https://example.com/jobs/1", title="Backend Engineer")
+    repo.set_review_decision(posting_url=job.url.unicode_string(), decision="saved", note="first")
+    repo.set_review_decision(posting_url=job.url.unicode_string(), decision="needs_manual_review", note="second")
+    client = TestClient(create_dashboard_app(db_path=tmp_path / "dashboard.db"))
+
+    response = client.get(f"/jobs/{job.metadata['db_id']}")
+
+    assert response.status_code == 200
+    assert "Review History" in response.text
+    assert "needs_manual_review" in response.text
+    assert "saved" in response.text
+
+
 def test_dashboard_returns_not_found_for_unknown_job(tmp_path) -> None:
     repo = JobsRepository(init_db(tmp_path / "dashboard.db"))
     client = TestClient(create_dashboard_app(db_path=tmp_path / "dashboard.db"))

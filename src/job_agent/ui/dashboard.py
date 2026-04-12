@@ -101,7 +101,7 @@ def create_dashboard_app(*, db_path: str | Path) -> FastAPI:
                 "decision": (
                     decision_map[job.url.unicode_string()].decision.value
                     if job.url.unicode_string() in decision_map
-                    else ("reviewed" if job.metadata.get("reviewed") else "unreviewed")
+                    else "unreviewed"
                 ),
                 "decision_note": (
                     decision_map[job.url.unicode_string()].note
@@ -153,12 +153,14 @@ def create_dashboard_app(*, db_path: str | Path) -> FastAPI:
         if job is None:
             return HTMLResponse("Job not found.", status_code=404)
         decision = jobs_repo.get_review_decision(posting_url=job.url.unicode_string())
+        decision_history = jobs_repo.get_review_decision_history(posting_url=job.url.unicode_string())
         return templates.TemplateResponse(
             request,
             "job_detail.html",
             {
                 "job": job,
                 "decision": decision,
+                "decision_history": decision_history,
                 "review_statuses": [status.value for status in ReviewStatus],
                 "return_to": return_to or "/jobs",
                 "score_display": _format_score(job),

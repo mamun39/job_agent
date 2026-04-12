@@ -477,7 +477,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(_format_missing_job_message(job_id=args.id, url=args.url))
                 return 1
             decision = repo.get_review_decision(posting_url=job.url.unicode_string())
-            print(render_job_detail(job, decision=decision))
+            decision_history = repo.get_review_decision_history(posting_url=job.url.unicode_string())
+            print(render_job_detail(job, decision=decision, decision_history=decision_history))
             return 0
 
         if args.review_command == "decision":
@@ -521,7 +522,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 job_status=_parse_job_status_filter(args.job_status),
                 limit=args.limit,
             )
-            output_path = export_jobs_csv(jobs, args.output)
+            decisions = repo.get_review_decisions_by_url(job.url.unicode_string() for job in jobs)
+            output_path = export_jobs_csv(jobs, args.output, decisions=decisions)
             print(f"Exported {len(jobs)} jobs to {output_path}")
             return 0
 
@@ -576,8 +578,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         if args.review_command == "cleanup":
-            removed_review_decisions = repo.cleanup_orphaned_review_decisions()
-            print(format_cleanup_summary(removed_review_decisions=removed_review_decisions))
+            removed_review_decisions, removed_review_history = repo.cleanup_orphaned_review_records()
+            print(
+                format_cleanup_summary(
+                    removed_review_decisions=removed_review_decisions,
+                    removed_review_history=removed_review_history,
+                )
+            )
             return 0
 
         parser.error("review requires a subcommand")

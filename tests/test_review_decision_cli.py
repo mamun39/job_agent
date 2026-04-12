@@ -40,6 +40,7 @@ def test_review_set_decision_by_id_persists_and_is_visible_in_show(tmp_path, mon
     assert exit_code == 0
     assert "Job ID: 1" in captured.out
     assert "Decision: saved" in captured.out
+    assert "Decision History:" in captured.out
 
 
 def test_review_set_decision_by_url_persists_note_and_view_command_returns_it(tmp_path, monkeypatch, capsys) -> None:
@@ -121,6 +122,13 @@ def test_review_cleanup_removes_orphaned_review_decisions(tmp_path, monkeypatch,
     job = _insert_job(repo, url="https://example.com/jobs/1", title="Job One")
     repo.set_review_decision(posting_url=job.url.unicode_string(), decision="saved")
     repo.set_review_decision(posting_url="https://example.com/jobs/orphan", decision="skipped")
+    repo._connection.execute(
+        """
+        INSERT INTO review_decision_history (posting_url, decision, decided_at, note)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("https://example.com/jobs/orphan", "skipped", "2026-04-11T00:00:00+00:00", None),
+    )
     repo._connection.execute("DELETE FROM jobs WHERE url = ?", ("https://example.com/jobs/1",))
     repo._connection.commit()
     monkeypatch.setattr("job_agent.main.load_settings", lambda: Settings(db_path=db_path))
@@ -130,9 +138,11 @@ def test_review_cleanup_removes_orphaned_review_decisions(tmp_path, monkeypatch,
     captured = capsys.readouterr()
 
     remaining = repo._connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
+    remaining_history = repo._connection.execute("SELECT COUNT(*) FROM review_decision_history").fetchone()[0]
     assert exit_code == 0
-    assert "Removed 2 orphaned review decisions." in captured.out
+    assert "Removed 2 orphaned review decisions and 3 orphaned review history entries." in captured.out
     assert remaining == 0
+    assert remaining_history == 0
 
 
 def test_review_cleanup_reports_zero_when_no_orphans_exist(tmp_path, monkeypatch, capsys) -> None:
@@ -147,6 +157,8 @@ def test_review_cleanup_reports_zero_when_no_orphans_exist(tmp_path, monkeypatch
     captured = capsys.readouterr()
 
     remaining = repo._connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
+    remaining_history = repo._connection.execute("SELECT COUNT(*) FROM review_decision_history").fetchone()[0]
     assert exit_code == 0
-    assert "Removed 0 orphaned review decisions." in captured.out
+    assert "Removed 0 orphaned review decisions and 0 orphaned review history entries." in captured.out
     assert remaining == 1
+    assert remaining_history == 1

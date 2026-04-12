@@ -7,7 +7,7 @@ import json
 import sqlite3
 from typing import Any
 
-from job_agent.core.models import JobPosting, JobStatus, ReviewDecision, ReviewStatus, SavedSearch
+from job_agent.core.models import JobPosting, JobStatus, ReviewDecision, ReviewDecisionHistoryEntry, ReviewStatus, SavedSearch
 
 
 class JobsRepository:
@@ -253,6 +253,22 @@ class JobsRepository:
             """,
             payload,
         )
+        self._connection.execute(
+            """
+            INSERT INTO review_decision_history (
+                posting_url,
+                decision,
+                decided_at,
+                note
+            ) VALUES (
+                :posting_url,
+                :decision,
+                :decided_at,
+                :note
+            )
+            """,
+            payload,
+        )
         self._connection.commit()
         stored = self.get_review_decision(posting_url=posting_url)
         if stored is None:
@@ -305,6 +321,36 @@ class JobsRepository:
             )
             for row in rows
         }
+
+    def get_review_decision_history(
+        self,
+        *,
+        posting_url: str,
+        limit: int = 20,
+    ) -> list[ReviewDecisionHistoryEntry]:
+        """Fetch append-only review decision history for a posting URL."""
+        rows = self._connection.execute(
+            """
+            SELECT id, posting_url, decision, decided_at, note
+            FROM review_decision_history
+            WHERE posting_url = ?
+            ORDER BY decided_at DESC, id DESC
+            LIMIT ?
+            """,
+            (posting_url, limit),
+        ).fetchall()
+        return [
+            ReviewDecisionHistoryEntry.model_validate(
+                {
+                    "history_id": row["id"],
+                    "posting_url": row["posting_url"],
+                    "decision": row["decision"],
+                    "decided_at": self._parse_datetime(row["decided_at"]),
+                    "note": row["note"],
+                }
+            )
+            for row in rows
+        ]
 
     def update_job_score(
         self,
@@ -391,16 +437,24 @@ class JobsRepository:
                 updated_count += 1
         return updated_count
 
-    def cleanup_orphaned_review_decisions(self) -> int:
-        """Delete persisted review decisions that no longer match any stored job URL."""
-        cursor = self._connection.execute(
+    def cleanup_orphaned_review_records(self) -> tuple[int, int]:
+        """Delete persisted review state rows that no longer match any stored job URL."""
+        decision_cursor = self._connection.execute(
             """
             DELETE FROM review_decisions
             WHERE posting_url NOT IN (SELECT url FROM jobs)
             """
         )
+        history_cursor = self._connection.execute(
+            """
+            DELETE FROM review_decision_history
+            WHERE posting_url NOT IN (SELECT url FROM jobs)
+            """
+        )
         self._connection.commit()
-        return int(cursor.rowcount if cursor.rowcount is not None else 0)
+        removed_decisions = int(decision_cursor.rowcount if decision_cursor.rowcount is not None else 0)
+        removed_history = int(history_cursor.rowcount if history_cursor.rowcount is not None else 0)
+        return removed_decisions, removed_history
 
     def save_search_prompt(
         self,
@@ -543,14 +597,12 @@ class JobsRepository:
                     job
                     for job in filtered
                     if self.get_review_decision(posting_url=job.url.unicode_string()) is not None
-                    or job.metadata.get("reviewed") is True
                 ]
             else:
                 filtered = [
                     job
                     for job in filtered
                     if self.get_review_decision(posting_url=job.url.unicode_string()) is None
-                    and job.metadata.get("reviewed") is not True
                 ]
         return filtered
 

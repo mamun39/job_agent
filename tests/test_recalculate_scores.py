@@ -13,11 +13,8 @@ def _insert_job(
     url: str,
     source_site: str,
     title: str,
-    reviewed: bool | None = None,
 ) -> JobPosting:
     metadata: dict[str, object] = {"score": 1, "score_explanations": ["old explanation"]}
-    if reviewed is not None:
-        metadata["reviewed"] = reviewed
     return repo.insert_job(
         JobPosting(
             source_site=source_site,
@@ -62,14 +59,12 @@ def test_review_rescore_honors_filters(tmp_path, monkeypatch, capsys) -> None:
         url="https://example.com/jobs/1",
         source_site="greenhouse",
         title="Senior Python Engineer",
-        reviewed=True,
     )
     skipped_job = _insert_job(
         repo,
         url="https://example.com/jobs/2",
         source_site="lever",
         title="Product Designer",
-        reviewed=False,
     )
     repo.set_review_decision(posting_url=saved_job.url.unicode_string(), decision=ReviewStatus.SAVED)
     repo.set_review_decision(posting_url=skipped_job.url.unicode_string(), decision=ReviewStatus.SKIPPED)

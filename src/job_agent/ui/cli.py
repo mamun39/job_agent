@@ -15,6 +15,7 @@ from job_agent.core.models import (
     PromptSearchResult,
     RejectedJobMatch,
     ReviewDecision,
+    ReviewDecisionHistoryEntry,
     ReviewStatus,
     ScoreResult,
 )
@@ -31,7 +32,7 @@ def render_jobs_list(jobs: list[JobPosting], *, decisions: dict[str, ReviewDecis
     for index, job in enumerate(jobs, start=1):
         score = _job_score(job)
         decision = decisions.get(job.url.unicode_string())
-        reviewed = decision.decision.value if decision else ("reviewed" if _job_reviewed(job) else "unreviewed")
+        reviewed = decision.decision.value if decision else "unreviewed"
         lines.append(
             f"{index}. id={job.metadata.get('db_id', 'n/a')} [{job.source_site}] "
             f"{job.title} | {job.company} | {job.location} | "
@@ -41,7 +42,12 @@ def render_jobs_list(jobs: list[JobPosting], *, decisions: dict[str, ReviewDecis
     return "\n".join(lines)
 
 
-def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None) -> str:
+def render_job_detail(
+    job: JobPosting,
+    *,
+    decision: ReviewDecision | None = None,
+    decision_history: list[ReviewDecisionHistoryEntry] | None = None,
+) -> str:
     """Render a single job posting in a readable detail view."""
     metadata_lines = []
     for key in sorted(job.metadata):
@@ -60,7 +66,7 @@ def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None
         f"Seniority: {job.seniority.value}",
         f"Job Status: {job.job_status.value}",
         f"Score: {_job_score(job) if _job_score(job) is not None else 'n/a'}",
-        f"Reviewed: {'yes' if decision is not None or _job_reviewed(job) else 'no'}",
+        f"Reviewed: {'yes' if decision is not None else 'no'}",
         f"Decision: {decision.decision.value if decision is not None else 'n/a'}",
         f"Decision Note: {decision.note or 'n/a' if decision is not None else 'n/a'}",
         "Description:",
@@ -72,6 +78,12 @@ def render_job_detail(job: JobPosting, *, decision: ReviewDecision | None = None
                 f"Decision Time: {decision.decided_at.isoformat()}",
             ]
         )
+    if decision_history:
+        lines.append("Decision History:")
+        for entry in decision_history:
+            lines.append(
+                f"- {entry.decided_at.isoformat()} | {entry.decision.value} | {entry.note or 'n/a'}"
+            )
     if metadata_lines:
         lines.append("Metadata:")
         lines.extend(metadata_lines)
@@ -110,10 +122,16 @@ def render_discovery_summary(result: CrawlResult) -> str:
     )
 
 
-def export_jobs_csv(jobs: list[JobPosting], output_path: str | Path) -> Path:
+def export_jobs_csv(
+    jobs: list[JobPosting],
+    output_path: str | Path,
+    *,
+    decisions: dict[str, ReviewDecision] | None = None,
+) -> Path:
     """Export jobs to a CSV file."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    decisions = decisions or {}
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
@@ -134,6 +152,7 @@ def export_jobs_csv(jobs: list[JobPosting], output_path: str | Path) -> Path:
         )
         writer.writeheader()
         for job in jobs:
+            decision = decisions.get(job.url.unicode_string())
             writer.writerow(
                 {
                     "source_site": job.source_site,
@@ -146,8 +165,8 @@ def export_jobs_csv(jobs: list[JobPosting], output_path: str | Path) -> Path:
                     "employment_type": job.employment_type.value,
                     "seniority": job.seniority.value,
                     "score": _job_score(job) if _job_score(job) is not None else "",
-                    "reviewed": "true" if _job_reviewed(job) else "false",
-                    "decision": "",
+                    "reviewed": "true" if decision is not None else "false",
+                    "decision": decision.decision.value if decision is not None else "",
                 }
             )
     return path
@@ -183,9 +202,12 @@ def format_mark_stale_summary(*, stale_count: int, stale_threshold_days: int) ->
     return f"Marked {stale_count} jobs stale using threshold={stale_threshold_days} days."
 
 
-def format_cleanup_summary(*, removed_review_decisions: int) -> str:
+def format_cleanup_summary(*, removed_review_decisions: int, removed_review_history: int) -> str:
     """Render a concise CLI summary for orphaned review-decision cleanup."""
-    return f"Removed {removed_review_decisions} orphaned review decisions."
+    return (
+        f"Removed {removed_review_decisions} orphaned review decisions "
+        f"and {removed_review_history} orphaned review history entries."
+    )
 
 
 def render_prompt_search_summary(result: PromptSearchResult) -> str:
@@ -349,8 +371,3 @@ def _job_score(job: JobPosting) -> float | int | None:
     if isinstance(value, (int, float)):
         return value
     return None
-
-
-def _job_reviewed(job: JobPosting) -> bool:
-    reviewed = job.metadata.get("reviewed")
-    return reviewed is True

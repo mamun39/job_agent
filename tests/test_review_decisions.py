@@ -38,6 +38,18 @@ def test_review_decision_persists_and_is_retrievable(tmp_path) -> None:
     assert fetched.note == "Strong match for current search."
 
 
+def test_review_decision_writes_append_history_entries(tmp_path) -> None:
+    repo = JobsRepository(init_db(tmp_path / "review_decisions.db"))
+    job = _insert_job(repo, "https://example.com/jobs/1")
+
+    repo.set_review_decision(posting_url=job.url.unicode_string(), decision=ReviewStatus.SAVED, note="first")
+    repo.set_review_decision(posting_url=job.url.unicode_string(), decision=ReviewStatus.SKIPPED, note="second")
+    history = repo.get_review_decision_history(posting_url=job.url.unicode_string())
+
+    assert [entry.decision for entry in history] == [ReviewStatus.SKIPPED, ReviewStatus.SAVED]
+    assert [entry.note for entry in history] == ["second", "first"]
+
+
 def test_list_jobs_can_filter_by_decision_status(tmp_path) -> None:
     repo = JobsRepository(init_db(tmp_path / "review_decisions.db"))
     saved_job = _insert_job(repo, "https://example.com/jobs/1")
@@ -58,6 +70,28 @@ def test_list_jobs_can_filter_by_decision_status(tmp_path) -> None:
     assert [job.url.unicode_string() for job in unreviewed_jobs] == [unreviewed_job.url.unicode_string()]
 
 
+def test_reviewed_filter_ignores_legacy_metadata_only_review_flag(tmp_path) -> None:
+    repo = JobsRepository(init_db(tmp_path / "review_decisions.db"))
+    legacy_job = repo.insert_job(
+        JobPosting(
+            source_site="greenhouse",
+            source_job_id="legacy",
+            url="https://example.com/jobs/legacy",
+            title="Legacy Review Flag",
+            company="Example Co",
+            location="Toronto, ON",
+            description_text="Legacy metadata reviewed flag only.",
+            metadata={"reviewed": True},
+        )
+    )
+
+    reviewed_jobs = repo.list_jobs(reviewed=True)
+    unreviewed_jobs = repo.list_jobs(reviewed=False)
+
+    assert reviewed_jobs == []
+    assert [job.url.unicode_string() for job in unreviewed_jobs] == [legacy_job.url.unicode_string()]
+
+
 def test_review_cli_renderers_show_persisted_decision_and_note(tmp_path) -> None:
     repo = JobsRepository(init_db(tmp_path / "review_decisions.db"))
     job = _insert_job(repo, "https://example.com/jobs/1")
@@ -67,11 +101,13 @@ def test_review_cli_renderers_show_persisted_decision_and_note(tmp_path) -> None
         note="Check compensation details manually.",
     )
 
-    detail = render_job_detail(job, decision=decision)
+    history = repo.get_review_decision_history(posting_url=job.url.unicode_string())
+    detail = render_job_detail(job, decision=decision, decision_history=history)
     decision_text = render_review_decision(decision)
     confirmation = format_review_update_result(decision)
 
     assert "Decision: needs_manual_review" in detail
     assert "Decision Note: Check compensation details manually." in detail
+    assert "Decision History:" in detail
     assert "Decision: needs_manual_review" in decision_text
     assert "Updated decision for https://example.com/jobs/1: needs_manual_review" in confirmation

@@ -34,6 +34,15 @@
       </ul>
     {% endif %}
 
+    {% if decision_history %}
+      <h2>Review History</h2>
+      <ul class="explanations">
+        {% for entry in decision_history %}
+          <li>{{ entry.decided_at.isoformat() }} | {{ entry.decision.value }} | {{ entry.note or 'n/a' }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
     <h2>Description</h2>
     <pre class="description">{{ job.description_text }}</pre>
 

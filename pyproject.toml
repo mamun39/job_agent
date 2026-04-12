@@ -37,5 +37,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-q"
+addopts = "-q -m \"not smoke\""
 testpaths = ["tests"]
+markers = [
+  "smoke: local real-browser smoke tests that require Playwright Chromium",
+]

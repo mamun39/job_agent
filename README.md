@@ -437,7 +437,14 @@ pytest
 
 Useful notes:
 
-- Browser-related tests mostly use fakes rather than full end-to-end browser launches.
+- Default `pytest` excludes the slower real-browser smoke layer.
+- Run the real-browser smoke layer explicitly with:
+
+```bash
+pytest -m smoke
+```
+
+- The smoke tests use a tiny local HTTP fixture server and skip cleanly when Playwright Chromium is not available.
 - YAML-based config tests require `PyYAML` when that path is exercised.
 - The project aims for small, reviewable, deterministic changes.
 

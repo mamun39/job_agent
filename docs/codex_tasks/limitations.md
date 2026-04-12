@@ -1,12 +1,12 @@
 # Project Limitations
 
-Last updated: 2026-04-10
+Last updated: 2026-04-11
 
 ## Current limitations
 
-- The CLI exposes discovery and review commands, but it remains a plain command-line interface without richer interactive workflows.
+- The CLI now covers discovery, prompt-driven search, registry maintenance, review, cleanup, and dashboard launch, but it remains a plain command-line interface without richer interactive workflows.
 - The CLI now also exposes prompt-driven `search` commands for raw natural-language prompts, but the interface remains plain-text and intentionally non-interactive.
-- A minimal local dashboard now exists for review workflows, but it is intentionally server-rendered and limited to simple list/detail/review actions.
+- A minimal local dashboard now exists for review workflows, and it now includes practical pagination, sorting, and quick review actions, but it remains intentionally server-rendered and lightweight.
 - `.env` parsing is intentionally simple and only supports basic `KEY=VALUE` lines.
 - Logging is local and JSON-structured with basic discovery failure context, but it still does not include persistent sinks, broader correlation fields, or external telemetry/export integrations.
 - SQLite storage uses a single lightweight schema with no migration framework; compatibility upgrades are handled with ad hoc SQLite-specific `ALTER TABLE` logic.
@@ -38,7 +38,7 @@ Last updated: 2026-04-10
 - Discovery telemetry now tracks local per-run counters for fetch, parse, dedupe, storage, and detail-enrichment outcomes, and the top-level CLI `discover` command now prints the richer per-query and aggregate summary lines.
 - Job lifecycle status now tracks local `active`, `stale`, and `archived` states with timestamp-based stale marking, but archival is not confirmed against remote sites and stale detection depends entirely on local `last_seen_at` maintenance.
 - The review workflow now supports both CLI and a minimal local dashboard, but there is still no richer terminal UI, authentication layer, or collaborative multi-user workflow.
-- Review state now uses persisted `review_decisions` as the single source of truth across CLI and dashboard flows, and each write also appends to a lightweight local `review_decision_history` audit trail; however, the history model is intentionally small and append-only, with no richer actor/session metadata or multi-user workflow semantics, and orphaned review records are still only cleaned up through the explicit CLI maintenance command.
+- Review state now uses persisted `review_decisions` as the single source of truth across CLI and dashboard flows, and each write also appends to a lightweight local `review_decision_history` audit trail; however, the history model is intentionally small and append-only, with no richer actor/session metadata or multi-user workflow semantics, and orphaned current/history review records are still only cleaned up through the explicit CLI maintenance command.
 - The CLI can open stored job URLs in the system browser for manual review, but it does not track browser-open events or review completion.
 - The local dashboard is intended for localhost use only and does not implement authentication, authorization, CSRF protection, or hardened deployment concerns.
 - The local dashboard now includes basic pagination, common sort controls, quicker review-decision actions, and friendlier validation for numeric filters such as `min_score`, but it remains a simple server-rendered localhost review surface rather than a richer search or workflow application.

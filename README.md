@@ -2,39 +2,39 @@
 
 Local-first, prompt-driven job search and review for supported company job boards.
 
-`job-agent` is a Python CLI with a minimal local dashboard. It combines prompt parsing, deterministic planning, Playwright-backed discovery, SQLite storage, hard filtering, scoring, and review workflows for a small set of supported board types. It is designed to stay honest about what is executable now and what is still future work.
+`job-agent` is a Python CLI with a small local dashboard. It combines deterministic prompt parsing, registry-backed planning, Playwright-based discovery, SQLite storage, hard filtering, configurable scoring, and local review workflows. It is designed to stay honest about what is executable now and what still depends on future work.
 
 ## Why I built this
 
 Two gaps motivated this project:
 
-1. Hosted assistants generally do not operate through a user's local authenticated browser session, which makes them a poor fit for some job-search workflows that depend on local browser context or live login state.
-2. Many open-source alternatives stop at scraping. They extract listings, but do not combine prompt-driven search, browser-assisted discovery, deterministic filtering, persistent storage, and local review workflows in one tool.
+1. Hosted assistants generally do not operate through a user's local authenticated browser session, which makes them a poor fit for some job-search workflows that depend on local browser state or local login context.
+2. Many open-source alternatives stop at extraction. They scrape listings, but do not combine prompt-driven search, browser-assisted discovery, deterministic filtering, persistent storage, and review workflows in one local tool.
 
-`job-agent` is an attempt to cover that middle ground without pretending to be a general autonomous web agent. The current implementation is local-first, conservative, and intentionally narrower than the long-term design target.
+`job-agent` is an attempt to cover that middle ground without pretending to be a general autonomous web agent. The implementation is local-first, conservative, and intentionally narrower than the broader design target.
 
 ## Core features
 
-- Local CLI for discovery, prompt-driven search, review, export, cleanup, rescoring, and stale-job maintenance
-- Minimal localhost dashboard for browsing stored jobs and updating review decisions
+- Local CLI for discovery, prompt-driven search, registry maintenance, review, export, cleanup, rescoring, and stale-job maintenance
+- Minimal localhost dashboard for browsing stored jobs, sorting/paginating results, and updating review decisions
 - Prompt-driven search pipeline built around explicit `SearchIntent` and `SearchPlan` models
-- Local board registry for resolving prompt-driven company searches into known executable board URLs
+- Local board registry for resolving prompt-driven company searches into known executable Greenhouse and Lever board URLs
 - Live listing discovery for Greenhouse and Lever
 - Parser-only support for Indeed and LinkedIn from saved HTML fixtures
-- Playwright-based page fetching using a local browser context
-- Optional Greenhouse and Lever detail-page enrichment
-- Deterministic deduplication and SQLite-backed storage
+- Playwright-based page fetching with optional authenticated local Chromium reuse
+- Optional Greenhouse and Lever detail-page enrichment, including selective two-stage enrichment
+- Deterministic deduplication with source-specific URL canonicalization for supported live sources
 - Hard-filter pass/reject decisions with explicit rejection reasons
-- Rule-based scoring with explanation reuse
-- Review decisions, notes, stale-job marking, and score recalculation
+- Rule-based scoring with configurable local rule sets and deterministic explanations
+- Review decisions with notes plus lightweight local review-history auditability
 - CSV export for stored jobs and prompt-search matches
 - Local saved searches by name
-- Optional failure artifacts: screenshot plus raw HTML
+- Optional debug artifacts on discovery failures: screenshot plus raw HTML
 - Optional summarizer interface with a local fallback summarizer
 
 ## How it works
 
-The current pipeline is:
+The prompt-driven path is:
 
 1. Parse a raw prompt into a structured `SearchIntent`.
 2. Compile that intent into a supported `SearchPlan`.
@@ -55,46 +55,51 @@ For non-prompt discovery, the system can also run directly from configured `Disc
   - `greenhouse`
   - `lever`
 - Conservative listing-page pagination for Greenhouse and Lever
-- Optional detail enrichment for Greenhouse and Lever job pages
+- Optional Greenhouse and Lever detail enrichment, including selective second-stage detail fetches for promising listings
 - Prompt-driven search from:
   - inline prompt text
   - prompt file
   - saved prompt name
-- Local board registry loading from JSON, or YAML when `PyYAML` is installed
+- Local board registry loading and maintenance from JSON, plus YAML loading when `PyYAML` is installed
+- Authenticated local Chromium reuse for read-only discovery/search via:
+  - persistent profile reuse
+  - CDP attach to an already-running Chromium browser
 - Hard filters for explicit constraints such as:
   - excluded keywords
   - company exclusions
   - source-site restrictions
   - location constraints
-  - explicit remote or hybrid requirements
+  - explicit remote, hybrid, or onsite requirements
   - freshness windows when job age is known
 - Persistent review workflow:
   - list jobs
   - inspect details
   - set decision and note
   - filter by decision and lifecycle status
-  - rescore stored jobs
+  - rescore stored jobs with active scoring rules
   - mark stale jobs
-  - clean orphaned review decisions
+  - clean orphaned review records
+- Local review audit trail via append-only review decision history
 - Prompt-search match and review export to CSV
 - Local debug artifact capture on fetch or parse failures when enabled
+- Local real-browser smoke tests for core browser launch/fetch/screenshot behavior
 
 ### Partial or limited
 
 - Indeed and LinkedIn parsing exist only for saved HTML fixtures, not live configured discovery
-- Prompt parsing is rule-based and conservative
+- Prompt parsing is still conservative and rule-based
 - The dashboard is intentionally minimal and localhost-oriented
 - The summarizer layer exists as an interface plus local fallback, not as a required external model integration
 
 ## Current limitations
 
 - Live source coverage is narrow. Greenhouse and Lever are the only supported live discovery sources.
-- Prompt parsing does not do deep semantic understanding. It only extracts explicit, low-ambiguity constraints.
+- Prompt parsing remains rule-based and phrasing-sensitive rather than semantic.
 - Prompt-driven execution depends on local board registry coverage. If a company board is not registered, the planner will not invent a board URL.
 - The project does not implement login automation, application submission, or generic authenticated-board support.
-- The dashboard is a simple local review surface, not a hardened web application.
+- The dashboard is a lightweight local review surface, not a hardened web application.
 - Storage is intentionally lightweight and SQLite-based, with ad hoc schema upgrades instead of a full migration framework.
-- Scoring is deterministic and rule-based. It is not semantic matching, and the default scoring criteria are still intentionally light.
+- Scoring is deterministic and rule-based. It is not semantic matching.
 - Saved searches are local records only. There is no scheduler, background execution, remote sync, or multi-user management.
 
 For the maintained limitation list, see [docs/codex_tasks/limitations.md](docs/codex_tasks/limitations.md).
@@ -140,7 +145,9 @@ job-agent --help
 ## Quick start
 
 1. Copy `.env.example` to `.env`.
-2. Add at least one discovery query or a board registry.
+2. Add either:
+   - configured discovery queries, or
+   - a local board registry for prompt-driven search.
 3. Run a discovery pass or a prompt-driven search.
 4. Review stored jobs from the CLI or the local dashboard.
 
@@ -175,21 +182,46 @@ Common settings:
 - `JOB_AGENT_BROWSER_USER_DATA_DIR`
 - `JOB_AGENT_BROWSER_SCREENSHOT_DIR`
 - `JOB_AGENT_BROWSER_HEADLESS`
+- `JOB_AGENT_BROWSER_AUTH_MODE`
+- `JOB_AGENT_BROWSER_AUTH_PROFILE_DIR`
+- `JOB_AGENT_BROWSER_AUTH_CDP_URL`
 - `JOB_AGENT_MAX_PAGES_PER_QUERY`
 - `JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE`
 - `JOB_AGENT_DEBUG_ARTIFACTS_DIR`
 - `JOB_AGENT_ENRICH_GREENHOUSE_DETAILS`
 - `JOB_AGENT_ENRICH_LEVER_DETAILS`
+- `JOB_AGENT_SELECTIVE_DETAIL_ENRICHMENT`
+- `JOB_AGENT_MIN_LISTING_SCORE_FOR_DETAIL_ENRICHMENT`
 - `JOB_AGENT_DISCOVERY_QUERIES`
 - `JOB_AGENT_DISCOVERY_QUERIES_FILE`
 - `JOB_AGENT_BOARD_REGISTRY`
 - `JOB_AGENT_BOARD_REGISTRY_FILE`
+- `JOB_AGENT_SCORING_RULES`
+- `JOB_AGENT_SCORING_RULES_FILE`
 
 Notes:
 
-- Discovery query and board registry config can be loaded from JSON directly.
-- YAML files are also supported when `PyYAML` is installed.
-- The local browser profile and screenshots default under `./data`.
+- Discovery queries, board registries, and scoring rules can be loaded from JSON directly.
+- YAML files are also supported for file-backed config when `PyYAML` is installed.
+- The local browser profile, screenshots, database, and debug artifacts default under `./data`.
+
+## Authenticated local browser mode
+
+Read-only browser reuse is optional and explicit.
+
+Supported modes:
+
+- `profile`: launch Chromium with an existing local profile directory
+- `attach`: connect to an already-running Chromium browser over CDP
+
+Examples:
+
+```bash
+job-agent discover --auth-browser profile --auth-browser-profile-dir /path/to/profile
+job-agent search "Find backend jobs at Stripe" --auth-browser attach --auth-browser-cdp-url http://127.0.0.1:9222
+```
+
+This mode is intended for local authenticated browsing context reuse only. It does not store credentials, automate login, or submit forms.
 
 ## Board registry
 
@@ -235,6 +267,16 @@ Or on Windows PowerShell:
 $env:JOB_AGENT_BOARD_REGISTRY_FILE = ".\board_registry.json"
 ```
 
+Registry maintenance is available from the CLI:
+
+```bash
+job-agent registry list --registry-file ./board_registry.json
+job-agent registry validate --registry-file ./board_registry.json
+job-agent registry add --registry-file ./board_registry.json --company Stripe --source-site greenhouse --board-url https://boards.greenhouse.io/stripe
+job-agent registry remove --registry-file ./board_registry.json --company Stripe --source-site greenhouse
+job-agent registry export --registry-file ./board_registry.json --output ./registry_export.json
+```
+
 Registry selection is deterministic. The compiler prefers explicit company mentions from the prompt, then narrows by supported source-site preferences and simple tag/location hints when available. It does not invent missing company boards.
 
 ## Prompt-driven search
@@ -262,13 +304,48 @@ job-agent search "Find backend jobs at Stripe in Canada" --store-matches
 
 What the search summary reports:
 
-- intent highlights
-- number of boards queried
+- parsed intent highlights
+- boards queried
 - jobs discovered
 - jobs matched after hard filters
 - jobs rejected
 
 `--show-rejected` prints rejected jobs plus stable rejection reasons. `--store-matches` persists newly matched jobs into the main database if they are not already stored.
+
+## Scoring rules
+
+Scoring is configurable through local rule sets instead of Python edits.
+
+Supported rule categories include:
+
+- include keywords
+- exclude keywords
+- preferred companies
+- discouraged companies
+- preferred locations
+- preferred seniority levels
+- preferred remote statuses
+- preferred employment types
+
+Example JSON:
+
+```json
+{
+  "include_keywords": ["backend", "platform", "python", "security"],
+  "exclude_keywords": ["sales", "recruiter"],
+  "preferred_companies": ["Stripe", "Grafana Labs"],
+  "preferred_locations": ["Canada", "Remote"],
+  "preferred_remote_statuses": ["remote", "hybrid"],
+  "preferred_seniority_levels": ["senior", "staff", "principal"]
+}
+```
+
+Apply via config:
+
+```bash
+export JOB_AGENT_SCORING_RULES_FILE=./scoring_rules.json
+job-agent review rescore
+```
 
 ## Main commands
 
@@ -279,6 +356,7 @@ job-agent discover
 job-agent discover --screenshot
 job-agent discover --greenhouse-details
 job-agent discover --lever-details
+job-agent discover --selective-details --min-detail-candidate-score 2
 ```
 
 ### Prompt-driven search
@@ -288,6 +366,15 @@ job-agent search "Find AI security roles in Canada"
 job-agent search --prompt-file ./prompt.txt
 job-agent search --saved-search my-search
 job-agent search "Find backend jobs at Stripe" --show-rejected --export ./matches.csv
+```
+
+### Registry maintenance
+
+```bash
+job-agent registry list
+job-agent registry validate
+job-agent registry import --registry-file ./board_registry.json --input ./seed_registry.json
+job-agent registry export --registry-file ./board_registry.json --output ./registry_export.json
 ```
 
 ### Review and maintenance
@@ -334,15 +421,15 @@ job-agent dashboard --host 127.0.0.1 --port 8001
 2. Set review decisions and notes.
 3. Run `job-agent review rescore` after scoring-rule changes.
 4. Run `job-agent review mark-stale --days N` periodically.
-5. Run `job-agent review cleanup` if you have removed jobs and want orphaned review decisions cleaned up.
+5. Run `job-agent review cleanup` if you have removed jobs and want orphaned review state cleaned up.
 
 ## Architecture
 
 At a high level:
 
 - `src/job_agent/main.py`: CLI entrypoint
-- `src/job_agent/config.py`: `.env`, discovery query, and board registry loading
-- `src/job_agent/core/`: shared models, parser, plan compiler, board registry selection, hard filters, scoring
+- `src/job_agent/config.py`: `.env`, discovery query, registry, and scoring-rule loading
+- `src/job_agent/core/`: shared models, parser, plan compiler, board registry selection, hard filters, scoring, dedupe
 - `src/job_agent/browser/`: Playwright session and fetch helpers
 - `src/job_agent/sites/`: site-local parsers for supported boards
 - `src/job_agent/flows/discover.py`: configured discovery pipeline
@@ -365,15 +452,16 @@ The main persisted records are:
 
 - `jobs`: normalized job postings plus metadata
 - `review_decisions`: latest explicit review decision per posting URL
+- `review_decision_history`: append-only local audit trail for review writes
 - `saved_searches`: named raw prompt records
 
 Job records can carry:
 
-- source identity and URL
+- source identity and canonicalized URL
 - normalized title, company, location, and description fields
 - score and score explanations
 - lifecycle status: `active`, `stale`, `archived`
-- last-seen timestamps
+- discovery and last-seen timestamps
 
 Matching model:
 
@@ -412,7 +500,8 @@ Matching model:
 - Treat all fetched page content as untrusted input.
 - The project is local-first and intended to run on a machine the user controls.
 - The dashboard is for localhost use. It is not designed as an internet-exposed or multi-user service.
-- The tool does not currently automate login flows, application submission, or remote account actions.
+- Authenticated browser reuse is local-only and read-only.
+- The tool does not automate login flows, application submission, or remote account actions.
 - Debug artifacts can contain page content. Store and handle them as local sensitive data.
 
 ## Roadmap
@@ -420,16 +509,15 @@ Matching model:
 Likely next steps, not current claims:
 
 - broader supported-source coverage
-- better board-registry tooling and seed management
-- improved prompt parser coverage without leaving deterministic rule-based behavior
+- stronger deterministic parser coverage without leaving rule-based behavior
 - richer prompt-plan execution ergonomics
-- stronger dashboard filters and pagination
+- more selective and source-aware enrichment behavior
 - more formal schema migration support
 - optional model-backed summarization as a clearly separate read-only layer
 
 ## Development / testing
 
-Run the test suite:
+Run the default test suite:
 
 ```bash
 pytest

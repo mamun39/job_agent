@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from job_agent.core.models import BoardRegistryEntry, CrawlResult, DiscoveryOptions, JobPosting, SearchQuery
+from job_agent.core.models import BoardRegistryEntry, CrawlResult, DiscoveryOptions, JobPosting, SearchIntent, SearchQuery
 from job_agent.flows.prompt_search import run_prompt_search
 from job_agent.storage.db import init_db
 from job_agent.storage.jobs_repo import JobsRepository
@@ -26,6 +26,13 @@ def _registry() -> list[BoardRegistryEntry]:
             tags=["platform"],
             location_hints=["Canada"],
         ),
+        BoardRegistryEntry(
+            company_name="LinkedIn",
+            source_site="linkedin",
+            board_url="https://www.linkedin.com/jobs/search/?keywords=security&f_C=1337",
+            tags=["security"],
+            location_hints=["Canada", "Remote"],
+        ),
     ]
 
 
@@ -40,9 +47,10 @@ def _job(
     posted_at: datetime | None = None,
     description_text: str = "Build backend systems.",
 ) -> JobPosting:
+    source_job_id = url.rstrip("/").rsplit("/", 1)[-1]
     return JobPosting(
         source_site=source_site,
-        source_job_id=url.rsplit("/", 1)[-1],
+        source_job_id=source_job_id,
         url=url,
         title=title,
         company=company,
@@ -195,3 +203,50 @@ def test_prompt_search_returns_rejected_jobs_with_reasons(monkeypatch, tmp_path)
     assert result.rejected_jobs[0].job.url.unicode_string() == "https://boards.greenhouse.io/stripe/jobs/3"
     assert result.rejected_jobs[0].rejection_reasons == ["Excluded keyword 'crypto' matched description"]
     assert result.rejected_jobs[0].explanation == "Excluded keyword 'crypto' matched description"
+
+
+def test_prompt_search_can_target_linkedin_when_explicitly_requested(monkeypatch, tmp_path) -> None:
+    repo = JobsRepository(init_db(tmp_path / "prompt.db"))
+    captured_queries: list[tuple[str, str]] = []
+
+    def fake_run_discovery_query(*, query, session, jobs_repo, options=None, **kwargs):
+        captured_queries.append((query.source_site, str(query.start_url)))
+        return _result_for(
+            _job(
+                url="https://www.linkedin.com/jobs/view/1234567890/",
+                title="Security Engineer",
+                company="LinkedIn",
+                location="Remote - Canada",
+                source_site="linkedin",
+                posted_at=datetime(2026, 4, 10, tzinfo=UTC),
+            ),
+            source_site="linkedin",
+        )
+
+    monkeypatch.setattr("job_agent.flows.prompt_search.run_discovery_query", fake_run_discovery_query)
+    monkeypatch.setattr(
+        "job_agent.flows.prompt_search.parse_search_intent",
+        lambda prompt_text: SearchIntent(
+            prompt_text=prompt_text,
+            constraints={
+                "target_titles": ["Security Engineer"],
+                "include_companies": ["LinkedIn"],
+                "location_constraints": ["Canada"],
+                "source_site_preferences": ["linkedin"],
+            },
+        ),
+    )
+
+    result = run_prompt_search(
+        prompt_text="Find security roles at LinkedIn in Canada on LinkedIn.",
+        session=object(),
+        jobs_repo=repo,
+        board_registry=_registry(),
+        options=DiscoveryOptions(),
+        now=datetime(2026, 4, 11, tzinfo=UTC),
+    )
+
+    assert captured_queries == [("linkedin", "https://www.linkedin.com/jobs/search/?keywords=security&f_C=1337")]
+    assert result.discovered_jobs_count == 1
+    assert len(result.matched_jobs) == 1
+    assert result.plan.queries[0].source_site == "linkedin"

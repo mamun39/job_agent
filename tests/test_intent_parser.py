@@ -40,6 +40,16 @@ def test_parse_search_intent_extracts_location_remote_and_site_preferences() -> 
     assert intent.constraints.source_site_preferences == ["greenhouse", "lever"]
 
 
+def test_parse_search_intent_extracts_explicit_linkedin_source_preference_without_losing_company_hint() -> None:
+    intent = parse_search_intent(
+        "Find security roles at LinkedIn in Canada on LinkedIn jobs."
+    )
+
+    assert intent.constraints.include_companies == ["LinkedIn"]
+    assert intent.constraints.location_constraints == ["Canada"]
+    assert intent.constraints.source_site_preferences == ["linkedin"]
+
+
 def test_parse_search_intent_extracts_company_hints_and_common_freshness() -> None:
     intent = parse_search_intent(
         "Looking for product engineer jobs at Stripe or Shopify, exclude companies like Meta and Amazon, past fortnight."

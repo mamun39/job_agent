@@ -36,7 +36,7 @@ def canonicalize_url(url: str, *, source_site: str | None = None) -> str:
 
     path = _normalize_path(parts.path or "/", hostname=hostname, source_site=source_site)
 
-    query = _normalize_query(parts.query)
+    query = _normalize_query(parts.query, path=path, source_site=source_site)
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
@@ -115,7 +115,9 @@ def deduplicate_job_postings(jobs: Iterable[JobPosting]) -> list[JobPosting]:
     return deduplicated
 
 
-def _normalize_query(query: str) -> str:
+def _normalize_query(query: str, *, path: str, source_site: str | None) -> str:
+    if source_site == "linkedin" and "/jobs/view/" in path.casefold():
+        return ""
     items = parse_qsl(query, keep_blank_values=False)
     filtered = [
         (key, value)

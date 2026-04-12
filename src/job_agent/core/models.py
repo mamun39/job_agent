@@ -74,7 +74,7 @@ class RemotePreference(StrEnum):
     ONSITE_OK = "onsite_ok"
 
 
-SUPPORTED_DISCOVERY_SITES: frozenset[str] = frozenset({"greenhouse", "lever"})
+SUPPORTED_DISCOVERY_SITES: frozenset[str] = frozenset({"greenhouse", "lever", "linkedin"})
 
 
 def _utc_now() -> datetime:

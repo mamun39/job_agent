@@ -88,6 +88,28 @@ def test_fixture_site_canonical_url_can_safely_normalize_www_host() -> None:
     assert canonical == "https://linkedin.com/jobs/view/12345"
 
 
+def test_linkedin_view_url_canonicalization_drops_non_identity_query_noise() -> None:
+    canonical = canonicalize_url(
+        "https://www.linkedin.com/jobs/view/12345/?currentJobId=12345&trackingId=abc&utm_source=feed",
+        source_site="linkedin",
+    )
+
+    assert canonical == "https://linkedin.com/jobs/view/12345"
+
+
+def test_linkedin_canonicalization_keeps_distinct_search_urls_distinct() -> None:
+    left = canonicalize_url(
+        "https://www.linkedin.com/jobs/search/?keywords=security&location=Canada",
+        source_site="linkedin",
+    )
+    right = canonicalize_url(
+        "https://www.linkedin.com/jobs/search/?keywords=backend&location=Canada",
+        source_site="linkedin",
+    )
+
+    assert left != right
+
+
 def test_dedupe_key_prefers_source_identity_when_present() -> None:
     job = _make_job(source_site="LinkedIn", source_job_id="ABC-123")
 

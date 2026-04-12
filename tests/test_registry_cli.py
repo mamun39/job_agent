@@ -137,15 +137,15 @@ def test_registry_add_rejects_invalid_source_site(monkeypatch, tmp_path, capsys)
             "--company",
             "Stripe",
             "--source-site",
-            "linkedin",
+            "indeed",
             "--board-url",
-            "https://www.linkedin.com/jobs",
+            "https://www.indeed.com/jobs",
         ]
     )
     output = capsys.readouterr().out
 
     assert exit_code == 1
-    assert "source_site must be one of: greenhouse, lever" in output
+    assert "source_site must be one of: greenhouse, lever, linkedin" in output
 
 
 def test_registry_add_enables_planning_with_valid_entries(monkeypatch, tmp_path, capsys) -> None:

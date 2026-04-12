@@ -10,11 +10,13 @@ from pathlib import Path
 from job_agent.browser.fetch import capture_debug_artifacts, fetch_listing_page_html
 from job_agent.browser.session import BrowserSessionManager
 from job_agent.config import load_max_pages_per_query, load_settings
+from job_agent.core.dedupe import canonicalize_url
 from job_agent.core.dedupe import deduplicate_job_postings
 from job_agent.core.models import CrawlResult, DiscoveryOptions, DiscoveryQuery, DiscoveryTelemetry, JobPosting, SearchQuery
 from job_agent.sites.greenhouse import GreenhouseAdapter
-from job_agent.sites.lever import LeverAdapter
 from job_agent.sites.base import JobSiteAdapter
+from job_agent.sites.lever import LeverAdapter
+from job_agent.sites.linkedin import LinkedInAdapter
 from job_agent.storage.jobs_repo import JobsRepository
 
 LOGGER = logging.getLogger(__name__)
@@ -108,6 +110,8 @@ def build_adapter_for_query(query: DiscoveryQuery) -> JobSiteAdapter:
         return GreenhouseAdapter.from_start_url(str(query.start_url))
     if query.source_site == "lever":
         return LeverAdapter.from_start_url(str(query.start_url))
+    if query.source_site == "linkedin":
+        return LinkedInAdapter.from_start_url(str(query.start_url))
     raise ValueError(f"Unsupported source_site: {query.source_site}")
 
 
@@ -168,6 +172,18 @@ def run_discovery_query(
             artifact_dir=artifact_dir,
             artifact_timestamp=artifact_timestamp,
         )
+    elif isinstance(adapter, LinkedInAdapter):
+        result = _run_linkedin_discovery_query(
+            adapter=adapter,
+            query=query,
+            session=session,
+            jobs_repo=jobs_repo,
+            screenshot_name=screenshot_name,
+            telemetry=telemetry,
+            capture_failure_artifacts=capture_failure_artifacts,
+            artifact_dir=artifact_dir,
+            artifact_timestamp=artifact_timestamp,
+        )
     else:
         try:
             html = fetch_listing_page_html(
@@ -205,6 +221,147 @@ def run_discovery_query(
     result.query = SearchQuery(
         keywords=list(query.include_keywords),
         location=query.location_hints[0] if query.location_hints else None,
+    )
+    return result
+
+
+def _run_linkedin_discovery_query(
+    *,
+    adapter: LinkedInAdapter,
+    query: DiscoveryQuery,
+    session: BrowserSessionManager,
+    jobs_repo: JobsRepository,
+    screenshot_name: str | None,
+    telemetry: DiscoveryTelemetry,
+    capture_failure_artifacts: bool,
+    artifact_dir: Path,
+    artifact_timestamp: datetime,
+) -> CrawlResult:
+    if getattr(session, "auth_mode", None) is None:
+        raise RuntimeError(
+            "LinkedIn live discovery requires authenticated local Chromium reuse. "
+            "Use --auth-browser profile or --auth-browser attach."
+        )
+
+    artifact_dirs: set[str] = set()
+    try:
+        listing_html = _fetch_linkedin_live_listing_html(
+            session=session,
+            adapter=adapter,
+            url=str(query.start_url),
+            screenshot_name=screenshot_name,
+        )
+        telemetry.pages_fetched += 1
+    except Exception:
+        LOGGER.exception(
+            "fetch_failed",
+            extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": str(query.start_url), "stage": "listing_fetch"},
+        )
+        telemetry.pages_failed += 1
+        captured_dir = _capture_failure_artifacts(
+            enabled=capture_failure_artifacts,
+            session=session,
+            artifact_dir=artifact_dir,
+            site_name=adapter.site_name,
+            query_label=query.label,
+            artifact_name="listing_fetch_failure_page_1",
+            artifact_timestamp=artifact_timestamp,
+        )
+        if captured_dir is not None:
+            artifact_dirs.add(str(captured_dir))
+            setattr(exc := _current_exception(), "debug_artifact_dir", str(captured_dir))
+        raise
+
+    try:
+        listing_postings = adapter.parse_job_postings(html=listing_html)
+    except Exception:
+        LOGGER.exception(
+            "parse_failed",
+            extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "listing_parse", "url": str(query.start_url)},
+        )
+        captured_dir = _capture_failure_artifacts(
+            enabled=capture_failure_artifacts,
+            session=session,
+            artifact_dir=artifact_dir,
+            site_name=adapter.site_name,
+            query_label=query.label,
+            artifact_name="listing_parse_failure_page_1",
+            html=listing_html,
+            artifact_timestamp=artifact_timestamp,
+        )
+        if captured_dir is not None:
+            artifact_dirs.add(str(captured_dir))
+            setattr(exc := _current_exception(), "debug_artifact_dir", str(captured_dir))
+        raise
+
+    enriched_postings: list[JobPosting] = []
+    if listing_postings:
+        telemetry.detail_enrichment_selected += len(listing_postings)
+    for posting in listing_postings:
+        detail_url = canonicalize_url(posting.url.unicode_string(), source_site=adapter.site_name)
+        telemetry.detail_fetch_attempts += 1
+        try:
+            detail_html = _fetch_linkedin_live_detail_html(
+                session=session,
+                adapter=adapter,
+                url=detail_url,
+            )
+            telemetry.detail_pages_fetched += 1
+        except Exception:
+            LOGGER.exception(
+                "fetch_failed",
+                extra={"event": "fetch_failed", "source_site": adapter.site_name, "url": detail_url, "stage": "detail_fetch"},
+            )
+            telemetry.detail_parse_failures += 1
+            captured_dir = _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query.label,
+                artifact_name=f"detail_fetch_failure_{posting.source_job_id or 'job'}",
+                artifact_timestamp=artifact_timestamp,
+            )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
+            enriched_postings.append(posting)
+            continue
+        try:
+            detail = adapter.parse_job_detail(url=detail_url, html=detail_html)
+            telemetry.detail_enrichment_successes += 1
+            enriched_postings.append(_merge_detail_into_listing(posting, detail.posting))
+        except Exception:
+            LOGGER.exception(
+                "parse_failed",
+                extra={"event": "parse_failed", "source_site": adapter.site_name, "stage": "detail_parse", "url": detail_url},
+            )
+            telemetry.detail_parse_failures += 1
+            captured_dir = _capture_failure_artifacts(
+                enabled=capture_failure_artifacts,
+                session=session,
+                artifact_dir=artifact_dir,
+                site_name=adapter.site_name,
+                query_label=query.label,
+                artifact_name=f"detail_parse_failure_{posting.source_job_id or 'job'}",
+                html=detail_html,
+                artifact_timestamp=artifact_timestamp,
+            )
+            if captured_dir is not None:
+                artifact_dirs.add(str(captured_dir))
+            enriched_postings.append(posting)
+
+    result = _run_discovery_with_telemetry(
+        adapter=adapter,
+        jobs_repo=jobs_repo,
+        parsed_postings=enriched_postings or listing_postings,
+        telemetry=telemetry,
+    )
+    result.metadata.update(
+        {
+            "pages_parsed": 1 if listing_postings else 0,
+            "debug_artifact_count": len(artifact_dirs),
+            "debug_artifact_dirs": sorted(artifact_dirs),
+        }
     )
     return result
 
@@ -697,6 +854,31 @@ def _capture_failure_artifacts(
     if not artifacts:
         return None
     return next(iter(artifacts.values())).parent
+
+
+def _fetch_linkedin_live_listing_html(
+    *,
+    session: BrowserSessionManager,
+    adapter: LinkedInAdapter,
+    url: str,
+    screenshot_name: str | None,
+) -> str:
+    page = session.open_url(url, wait_until="domcontentloaded")
+    adapter.wait_for_live_listing_page(page)
+    if screenshot_name is not None:
+        session.take_screenshot(name=screenshot_name, page=page)
+    return page.content()
+
+
+def _fetch_linkedin_live_detail_html(
+    *,
+    session: BrowserSessionManager,
+    adapter: LinkedInAdapter,
+    url: str,
+) -> str:
+    page = session.open_url(url, wait_until="domcontentloaded")
+    adapter.wait_for_live_detail_page(page)
+    return page.content()
 
 
 def _current_exception() -> Exception:

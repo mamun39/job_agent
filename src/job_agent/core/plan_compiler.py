@@ -19,7 +19,7 @@ def compile_search_intent(intent: SearchIntent, *, board_registry: list[BoardReg
     unsupported_requested = [site for site in requested_sites if site not in SUPPORTED_DISCOVERY_SITES]
 
     if requested_sites and not supported_requested:
-        supported = ", ".join(DEFAULT_PLANNING_SITES)
+        supported = ", ".join(sorted(SUPPORTED_DISCOVERY_SITES))
         requested = ", ".join(requested_sites)
         raise ValueError(
             f"Intent requested unsupported source sites: {requested}. Supported live sources: {supported}"

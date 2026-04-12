@@ -29,9 +29,15 @@ def test_build_adapter_for_query_selects_supported_adapter() -> None:
         label="Lever jobs",
         start_url="https://jobs.lever.co/exampleco",
     )
+    linkedin_query = DiscoveryQuery(
+        source_site="linkedin",
+        label="LinkedIn jobs",
+        start_url="https://www.linkedin.com/jobs/search/?keywords=python",
+    )
 
     assert build_adapter_for_query(greenhouse_query).site_name == "greenhouse"
     assert build_adapter_for_query(lever_query).site_name == "lever"
+    assert build_adapter_for_query(linkedin_query).site_name == "linkedin"
 
 
 def test_run_discovery_query_fetches_parses_and_stores_jobs(tmp_path, monkeypatch) -> None:
@@ -54,6 +60,104 @@ def test_run_discovery_query_fetches_parses_and_stores_jobs(tmp_path, monkeypatc
     assert result.metadata["label"] == "Example engineering"
     assert result.metadata["stored_count"] == 2
     assert len(repo.list_jobs(source_site="greenhouse")) == 2
+
+
+def test_run_discovery_query_supports_authenticated_linkedin_live_discovery(tmp_path, monkeypatch) -> None:
+    query = DiscoveryQuery(
+        source_site="linkedin",
+        label="LinkedIn python",
+        start_url="https://www.linkedin.com/jobs/search/?keywords=python",
+    )
+    listing_html = Path("tests/fixtures/linkedin_jobs_sample.html").read_text(encoding="utf-8")
+    detail_html = Path("tests/fixtures/linkedin_job_detail_sample.html").read_text(encoding="utf-8")
+    repo = JobsRepository(init_db(tmp_path / "discover-linkedin.db"))
+
+    class _AuthenticatedSession(_FakeSession):
+        auth_mode = "attach"
+
+    monkeypatch.setattr("job_agent.flows.discover._fetch_linkedin_live_listing_html", lambda **_: listing_html)
+    monkeypatch.setattr("job_agent.flows.discover._fetch_linkedin_live_detail_html", lambda **_: detail_html)
+
+    result = run_discovery_query(
+        query=query,
+        session=_AuthenticatedSession(),
+        jobs_repo=repo,
+    )
+
+    assert result.source_site == "linkedin"
+    assert result.metadata["stored_count"] == 2
+    assert result.metadata["detail_enrichment_selected"] == 2
+    assert result.metadata["detail_fetch_attempts"] == 2
+    assert result.metadata["detail_enrichment_successes"] == 2
+    stored = repo.list_jobs(source_site="linkedin")
+    assert len(stored) == 2
+    assert stored[0].description_text != "Listing-only discovery from LinkedIn jobs page."
+
+
+def test_linkedin_detail_fetch_uses_canonical_job_url(tmp_path, monkeypatch) -> None:
+    query = DiscoveryQuery(
+        source_site="linkedin",
+        label="LinkedIn python",
+        start_url="https://www.linkedin.com/jobs/search/?keywords=python",
+    )
+    listing_html = """
+    <html>
+      <body>
+        <ul>
+          <li class="jobs-search-results__list-item">
+            <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/1234567890/?trackingId=abc&refId=xyz">
+              Security Engineer
+            </a>
+            <h4 class="base-search-card__subtitle">LinkedIn</h4>
+            <span class="job-search-card__location">Toronto, Ontario, Canada</span>
+          </li>
+        </ul>
+      </body>
+    </html>
+    """
+    detail_html = Path("tests/fixtures/linkedin_job_detail_sample.html").read_text(encoding="utf-8")
+    repo = JobsRepository(init_db(tmp_path / "discover-linkedin.db"))
+    fetched_urls: list[str] = []
+
+    class _AuthenticatedSession(_FakeSession):
+        auth_mode = "attach"
+
+    monkeypatch.setattr("job_agent.flows.discover._fetch_linkedin_live_listing_html", lambda **_: listing_html)
+
+    def fake_fetch_detail_html(*, session, adapter, url):  # noqa: ARG001
+        fetched_urls.append(url)
+        return detail_html
+
+    monkeypatch.setattr("job_agent.flows.discover._fetch_linkedin_live_detail_html", fake_fetch_detail_html)
+
+    result = run_discovery_query(
+        query=query,
+        session=_AuthenticatedSession(),
+        jobs_repo=repo,
+    )
+
+    assert result.metadata["detail_enrichment_successes"] == 1
+    assert fetched_urls == ["https://linkedin.com/jobs/view/1234567890"]
+
+
+def test_run_discovery_query_requires_authenticated_browser_for_linkedin(tmp_path) -> None:
+    query = DiscoveryQuery(
+        source_site="linkedin",
+        label="LinkedIn python",
+        start_url="https://www.linkedin.com/jobs/search/?keywords=python",
+    )
+    repo = JobsRepository(init_db(tmp_path / "discover-linkedin.db"))
+
+    try:
+        run_discovery_query(
+            query=query,
+            session=_FakeSession(),
+            jobs_repo=repo,
+        )
+    except RuntimeError as exc:
+        assert "LinkedIn live discovery requires authenticated local Chromium reuse" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected RuntimeError for unauthenticated LinkedIn discovery")
 
 
 def test_cli_discover_prints_summary_and_surfaces_failures(tmp_path, monkeypatch, capsys) -> None:

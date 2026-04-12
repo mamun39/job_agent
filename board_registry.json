@@ -33,5 +33,12 @@
     "board_url": "https://jobs.lever.co/Eve",
     "tags": ["aviation", "mobility"],
     "location_hints": ["Remote"]
+  },
+  {
+    "company_name": "LinkedIn",
+    "source_site": "linkedin",
+    "board_url": "https://www.linkedin.com/jobs/search/?keywords=security&f_C=1337",
+    "tags": ["security"],
+    "location_hints": ["Canada", "Remote"]
   }
 ]

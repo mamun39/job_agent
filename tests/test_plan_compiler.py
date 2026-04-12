@@ -22,7 +22,7 @@ def test_compile_search_intent_defaults_to_supported_live_sources() -> None:
     assert "Generated queries preserve intent constraints but remain non-executable until board seed URLs are provided." in plan.notes
 
 
-def test_compile_search_intent_preserves_supported_source_preferences_and_ignores_unsupported() -> None:
+def test_compile_search_intent_preserves_supported_source_preferences() -> None:
     intent = SearchIntent(
         prompt_text="Find senior platform roles on Lever and LinkedIn.",
         constraints={
@@ -34,16 +34,16 @@ def test_compile_search_intent_preserves_supported_source_preferences_and_ignore
 
     plan = compile_search_intent(intent)
 
-    assert [query.source_site for query in plan.queries] == ["lever"]
+    assert [query.source_site for query in plan.queries] == ["lever", "linkedin"]
     assert plan.queries[0].seniority_preferences == [SeniorityLevel.SENIOR]
-    assert "Ignored unsupported source-site preferences: linkedin." in plan.notes
+    assert all("Ignored unsupported source-site preferences" not in note for note in plan.notes)
 
 
 def test_compile_search_intent_surfaces_unsupported_source_requests_clearly() -> None:
     intent = SearchIntent(
-        prompt_text="Find data roles on LinkedIn only.",
+        prompt_text="Find data roles on Indeed only.",
         constraints={
-            "source_site_preferences": ["linkedin"],
+            "source_site_preferences": ["indeed"],
             "target_titles": ["Data Engineer"],
         },
     )
@@ -51,8 +51,8 @@ def test_compile_search_intent_surfaces_unsupported_source_requests_clearly() ->
     with pytest.raises(ValueError) as exc_info:
         compile_search_intent(intent)
 
-    assert "Intent requested unsupported source sites: linkedin." in str(exc_info.value)
-    assert "Supported live sources: greenhouse, lever" in str(exc_info.value)
+    assert "Intent requested unsupported source sites: indeed." in str(exc_info.value)
+    assert "Supported live sources: greenhouse, lever, linkedin" in str(exc_info.value)
 
 
 def test_compile_search_intent_carries_include_exclude_location_and_company_hints() -> None:

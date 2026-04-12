@@ -227,9 +227,9 @@ def test_search_plan_validates_supported_executable_queries() -> None:
 
 def test_search_plan_query_rejects_unsupported_source_site() -> None:
     with pytest.raises(ValidationError) as exc_info:
-        SearchPlanQuery(label="LinkedIn Python Roles", source_site="linkedin", include_keywords=["python"])
+        SearchPlanQuery(label="Indeed Python Roles", source_site="indeed", include_keywords=["python"])
 
-    assert "source_site must be one of: greenhouse, lever" in str(exc_info.value)
+    assert "source_site must be one of: greenhouse, lever, linkedin" in str(exc_info.value)
 
 
 def test_search_plan_requires_at_least_one_query() -> None:

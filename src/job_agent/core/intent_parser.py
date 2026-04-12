@@ -139,6 +139,20 @@ _SITE_PATTERNS = (
     ("greenhouse", re.compile(r"\bgreenhouse\b", re.IGNORECASE)),
     ("lever", re.compile(r"\blever\b", re.IGNORECASE)),
 )
+_EXPLICIT_SOURCE_SITE_PATTERNS: tuple[tuple[str, tuple[re.Pattern[str], ...]], ...] = (
+    (
+        "linkedin",
+        (
+            re.compile(r"\bon\s+linkedin\b", re.IGNORECASE),
+            re.compile(r"\busing\s+linkedin\b", re.IGNORECASE),
+            re.compile(r"\bvia\s+linkedin\b", re.IGNORECASE),
+            re.compile(r"\bsearch\s+linkedin\s+jobs\b", re.IGNORECASE),
+            re.compile(r"\blinkedin\s+jobs\b", re.IGNORECASE),
+            re.compile(r"\blinkedin\s+source\b", re.IGNORECASE),
+            re.compile(r"\blinkedin\s+site\b", re.IGNORECASE),
+        ),
+    ),
+)
 
 _CLAUSE_STOP_PATTERN = re.compile(
     r"\b(?:in|from|at|on|within|over|during|posted|last|past|today|yesterday|"
@@ -392,7 +406,17 @@ def _extract_seniority_preferences(prompt_text: str) -> list[SeniorityLevel]:
 
 
 def _extract_source_site_preferences(prompt_text: str) -> list[str]:
-    return [site_name for site_name, pattern in _SITE_PATTERNS if pattern.search(prompt_text)]
+    preferences = [
+        site_name
+        for site_name, patterns in _EXPLICIT_SOURCE_SITE_PATTERNS
+        if any(pattern.search(prompt_text) for pattern in patterns)
+    ]
+    preferences.extend(
+        site_name
+        for site_name, pattern in _SITE_PATTERNS
+        if site_name not in preferences and pattern.search(prompt_text)
+    )
+    return preferences
 
 
 def _extract_freshness_window_days(prompt_text: str) -> int | None:

@@ -37,12 +37,12 @@ class _FakeContext:
 class _FakeChromium:
     def __init__(self, context: _FakeContext) -> None:
         self.context = context
-        self.calls: list[tuple[str, bool]] = []
+        self.calls: list[dict[str, object]] = []
         self.cdp_calls: list[str] = []
         self.browser: _FakeBrowser | None = None
 
-    def launch_persistent_context(self, *, user_data_dir: str, headless: bool) -> _FakeContext:
-        self.calls.append((user_data_dir, headless))
+    def launch_persistent_context(self, **kwargs) -> _FakeContext:
+        self.calls.append(kwargs)
         return self.context
 
     def connect_over_cdp(self, url: str) -> "_FakeBrowser":
@@ -112,7 +112,7 @@ def test_launch_creates_missing_paths_and_uses_persistent_context(tmp_path, monk
     assert session.user_data_dir.is_dir()
     assert session.screenshot_dir.is_dir()
     assert fake_factory.started is True
-    assert fake_chromium.calls == [(str(tmp_path / "profile"), False)]
+    assert fake_chromium.calls == [{"user_data_dir": str(tmp_path / "profile"), "headless": False}]
 
 
 def test_open_page_reuses_existing_page_or_creates_one(tmp_path, monkeypatch) -> None:
@@ -239,3 +239,32 @@ def test_authenticated_attach_mode_reuses_existing_browser_context(tmp_path, mon
     assert fake_chromium.cdp_calls == ["http://127.0.0.1:9222"]
     assert fake_browser.closed is False
     assert fake_playwright.stopped is True
+
+
+def test_authenticated_profile_mode_can_reuse_named_chromium_subprofile(tmp_path, monkeypatch) -> None:
+    profile_root = tmp_path / "Google" / "Chrome" / "User Data"
+    profile_dir = profile_root / "Profile 1"
+    profile_dir.mkdir(parents=True)
+    fake_context = _FakeContext()
+    fake_chromium = _FakeChromium(fake_context)
+    fake_playwright = _FakePlaywright(fake_chromium)
+    fake_factory = _FakeSyncPlaywrightFactory(fake_playwright)
+    monkeypatch.setattr("job_agent.browser.session.sync_playwright", lambda: fake_factory)
+
+    session = BrowserSessionManager(
+        user_data_dir=tmp_path / "profile",
+        screenshot_dir=tmp_path / "shots",
+        auth_mode="profile",
+        auth_profile_dir=profile_dir,
+    )
+
+    session.launch()
+
+    assert fake_chromium.calls == [
+        {
+            "user_data_dir": str(profile_root),
+            "args": ["--profile-directory=Profile 1"],
+            "channel": "chrome",
+            "headless": False,
+        }
+    ]

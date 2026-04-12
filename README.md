@@ -18,9 +18,9 @@ Two gaps motivated this project:
 - Local CLI for discovery, prompt-driven search, registry maintenance, review, export, cleanup, rescoring, and stale-job maintenance
 - Minimal localhost dashboard for browsing stored jobs, sorting/paginating results, and updating review decisions
 - Prompt-driven search pipeline built around explicit `SearchIntent` and `SearchPlan` models
-- Local board registry for resolving prompt-driven company searches into known executable Greenhouse and Lever board URLs
-- Live listing discovery for Greenhouse and Lever
-- Parser-only support for Indeed and LinkedIn from saved HTML fixtures
+- Local board registry for resolving prompt-driven company searches into known executable Greenhouse, Lever, and explicit LinkedIn Jobs query URLs
+- Live listing discovery for Greenhouse, Lever, and authenticated LinkedIn Jobs queries
+- Parser-only support for Indeed from saved HTML fixtures
 - Playwright-based page fetching with optional authenticated local Chromium reuse
 - Optional Greenhouse and Lever detail-page enrichment, including selective two-stage enrichment
 - Deterministic deduplication with source-specific URL canonicalization for supported live sources
@@ -54,6 +54,7 @@ For non-prompt discovery, the system can also run directly from configured `Disc
 - Live configured discovery for:
   - `greenhouse`
   - `lever`
+  - `linkedin` via an authenticated local Chromium browser session and an explicit LinkedIn Jobs search/query URL
 - Conservative listing-page pagination for Greenhouse and Lever
 - Optional Greenhouse and Lever detail enrichment, including selective second-stage detail fetches for promising listings
 - Prompt-driven search from:
@@ -86,17 +87,19 @@ For non-prompt discovery, the system can also run directly from configured `Disc
 
 ### Partial or limited
 
-- Indeed and LinkedIn parsing exist only for saved HTML fixtures, not live configured discovery
+- Indeed parsing exists only for saved HTML fixtures, not live configured discovery
+- LinkedIn live support is intentionally narrow: authenticated read-only jobs search and detail reads only
+- Prompt-driven search is read-only by default; matched jobs only appear in the main database and dashboard when `--store-matches` is used
 - Prompt parsing is still conservative and rule-based
 - The dashboard is intentionally minimal and localhost-oriented
 - The summarizer layer exists as an interface plus local fallback, not as a required external model integration
 
 ## Current limitations
 
-- Live source coverage is narrow. Greenhouse and Lever are the only supported live discovery sources.
+- Live source coverage is narrow. Greenhouse, Lever, and authenticated LinkedIn Jobs are the only supported live discovery sources.
 - Prompt parsing remains rule-based and phrasing-sensitive rather than semantic.
 - Prompt-driven execution depends on local board registry coverage. If a company board is not registered, the planner will not invent a board URL.
-- The project does not implement login automation, application submission, or generic authenticated-board support.
+- The project does not implement login automation, application submission, Easy Apply automation, or generic authenticated-board support.
 - The dashboard is a lightweight local review surface, not a hardened web application.
 - Storage is intentionally lightweight and SQLite-based, with ad hoc schema upgrades instead of a full migration framework.
 - Scoring is deterministic and rule-based. It is not semantic matching.
@@ -211,14 +214,29 @@ Read-only browser reuse is optional and explicit.
 
 Supported modes:
 
-- `profile`: launch Chromium with an existing local profile directory
+- `profile`: launch Chromium with an existing local profile directory or named subprofile such as `Profile 1` or `Default`
 - `attach`: connect to an already-running Chromium browser over CDP
+
+Operational guidance:
+
+- For LinkedIn, `attach` mode is currently the more reliable path.
+- `profile` mode can work for local Chromium profile reuse, but real default Chrome user-data directories and copied encrypted profiles can still be fragile on Windows.
+- If you use `attach`, start a separate debug-enabled Chrome or Edge instance and log into LinkedIn manually in that browser before running `job-agent`.
 
 Examples:
 
 ```bash
 job-agent discover --auth-browser profile --auth-browser-profile-dir /path/to/profile
-job-agent search "Find backend jobs at Stripe" --auth-browser attach --auth-browser-cdp-url http://127.0.0.1:9222
+job-agent discover --auth-browser profile --auth-browser-profile-dir "/path/to/Chrome/User Data/Profile 1"
+job-agent discover --auth-browser attach --auth-browser-cdp-url http://127.0.0.1:9222
+job-agent search "Find security roles at LinkedIn in Canada on LinkedIn" --auth-browser attach --auth-browser-cdp-url http://127.0.0.1:9222
+```
+
+Typical LinkedIn attach flow:
+
+```bash
+chrome --remote-debugging-port=9222 --user-data-dir="/path/to/Chrome/User Data"
+job-agent search "Find security roles at LinkedIn in Canada on LinkedIn" --auth-browser attach --auth-browser-cdp-url http://127.0.0.1:9222
 ```
 
 This mode is intended for local authenticated browsing context reuse only. It does not store credentials, automate login, or submit forms.
@@ -251,6 +269,13 @@ Example JSON:
     "source_site": "lever",
     "board_url": "https://jobs.lever.co/whoop",
     "tags": ["healthtech"]
+  },
+  {
+    "company_name": "LinkedIn",
+    "source_site": "linkedin",
+    "board_url": "https://www.linkedin.com/jobs/search/?keywords=security&f_C=1337",
+    "tags": ["security"],
+    "location_hints": ["Canada", "Remote"]
   }
 ]
 ```
@@ -311,6 +336,11 @@ What the search summary reports:
 - jobs rejected
 
 `--show-rejected` prints rejected jobs plus stable rejection reasons. `--store-matches` persists newly matched jobs into the main database if they are not already stored.
+
+Important:
+
+- `job-agent search` is read-only by default.
+- If you want matched jobs to appear in `review` commands or the dashboard, run the search with `--store-matches`.
 
 ## Scoring rules
 
@@ -414,6 +444,7 @@ job-agent dashboard --host 127.0.0.1 --port 8001
 2. Run `job-agent search "..."`.
 3. Inspect matches and optional rejected jobs.
 4. Export matches to CSV or persist them with `--store-matches`.
+5. Open the dashboard or `review list` only after persisting matches if you want them in the main database.
 
 ### 3. Ongoing local review
 
@@ -475,7 +506,7 @@ Matching model:
 ### `job-agent discover` finds nothing
 
 - Check that discovery queries or board registry entries are configured correctly.
-- Confirm the board URL is a supported Greenhouse or Lever listing page.
+- Confirm the board URL is a supported Greenhouse or Lever listing page, or an explicit LinkedIn Jobs search/query URL.
 - If pagination or detail enrichment was expected, verify the source actually exposes those pages in standard markup.
 
 ### Prompt-driven search says it cannot resolve executable boards
@@ -483,6 +514,26 @@ Matching model:
 - Add the company board to the local registry.
 - Confirm the prompt names a company that exists in the registry.
 - Confirm the registry source site is one of the supported live sources.
+
+### LinkedIn live discovery does not show authenticated results
+
+- Use `--auth-browser profile` or `--auth-browser attach`; LinkedIn live reads do not run unauthenticated.
+- Prefer `--auth-browser attach` for LinkedIn.
+- In `attach` mode, start Chrome or Edge with remote debugging enabled before running `job-agent`, then log into LinkedIn manually in that browser window.
+- In `profile` mode, prefer a real Chromium subprofile path such as `.../User Data/Profile 1` or `.../User Data/Default`, but avoid assuming a copied or default production Chrome profile will always launch cleanly.
+- If LinkedIn still fails to render readable results, enable `JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE=true` and inspect the captured HTML/screenshot.
+
+### Prompt-search matches do not appear in the dashboard
+
+- `job-agent search` uses an in-memory temporary store by default.
+- Run the same command with `--store-matches` if you want matched jobs inserted into the main SQLite database.
+- After that, the jobs will appear in `job-agent review list` and `job-agent dashboard`.
+
+### LinkedIn search works but some detail fetches still fail
+
+- The current LinkedIn MVP can fall back to listing-only data when direct detail reads fail for some jobs.
+- This is non-fatal by design; discovery can still succeed and matched jobs can still be returned or stored.
+- If you need to inspect those failures, enable `JOB_AGENT_DEBUG_ARTIFACTS_ON_FAILURE=true` and review the saved page HTML/screenshot.
 
 ### Dashboard shows `n/a` for score
 

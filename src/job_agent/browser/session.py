@@ -179,11 +179,9 @@ class BrowserSessionManager:
             raise RuntimeError(
                 f"Authenticated browser profile directory does not exist: {profile_dir}"
             )
+        launch_kwargs = _resolve_authenticated_profile_launch_kwargs(profile_dir)
         self._owns_context = True
-        return self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(profile_dir),
-            headless=self.headless,
-        )
+        return self._playwright.chromium.launch_persistent_context(**launch_kwargs, headless=self.headless)
 
     def _attach_to_existing_browser_context(self) -> BrowserContext:
         cdp_url = self.auth_cdp_url
@@ -224,3 +222,27 @@ def _validate_cdp_url(value: str) -> None:
         raise RuntimeError(
             "Authenticated browser CDP URL must be a valid http(s) or ws(s) URL."
         )
+
+
+def _resolve_authenticated_profile_launch_kwargs(profile_dir: Path) -> dict[str, Any]:
+    profile_name = profile_dir.name
+    parent_dir = profile_dir.parent
+    if profile_name == "Default" or profile_name.startswith("Profile "):
+        launch_kwargs: dict[str, Any] = {
+            "user_data_dir": str(parent_dir),
+            "args": [f"--profile-directory={profile_name}"],
+        }
+        channel = _infer_chromium_channel(profile_dir)
+        if channel is not None:
+            launch_kwargs["channel"] = channel
+        return launch_kwargs
+    return {"user_data_dir": str(profile_dir)}
+
+
+def _infer_chromium_channel(profile_dir: Path) -> str | None:
+    normalized_parts = {part.casefold() for part in profile_dir.parts}
+    if "chrome" in normalized_parts and "google" in normalized_parts:
+        return "chrome"
+    if "edge" in normalized_parts and "microsoft" in normalized_parts:
+        return "msedge"
+    return None

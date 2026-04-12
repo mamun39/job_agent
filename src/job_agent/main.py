@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     discover_parser = subparsers.add_parser(
         "discover",
-        help="Run configured read-only discovery queries.",
+        help="Run configured read-only discovery queries, including authenticated LinkedIn jobs queries when explicitly configured.",
     )
     discover_parser.add_argument(
         "--screenshot",
@@ -95,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     search_parser = subparsers.add_parser(
         "search",
-        help="Run prompt-driven search from a raw natural-language prompt using the local board registry.",
+        help="Run prompt-driven search from a raw natural-language prompt using the local board registry and supported live sources.",
     )
     search_parser.add_argument("prompt", nargs="?", help="Inline natural-language search prompt.")
     search_parser.add_argument("--prompt-file", help="Path to a text file containing the prompt.")
@@ -627,11 +627,11 @@ def _add_authenticated_browser_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--auth-browser",
         choices=["profile", "attach"],
-        help="Opt in to authenticated local Chromium session reuse via a persistent profile or CDP attach.",
+        help="Opt in to authenticated local Chromium session reuse via a persistent profile or CDP attach. Required for live LinkedIn jobs reads.",
     )
     parser.add_argument(
         "--auth-browser-profile-dir",
-        help="Existing Chromium profile directory to reuse in authenticated profile mode.",
+        help="Existing Chromium profile directory or named subprofile (for example 'Profile 1') to reuse in authenticated profile mode.",
     )
     parser.add_argument(
         "--auth-browser-cdp-url",
